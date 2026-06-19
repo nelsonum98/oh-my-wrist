@@ -1,4 +1,4 @@
-name: Garmin Release Artifacts
+name: Release
 
 on:
   release:
@@ -426,3 +426,112 @@ jobs:
           fail_on_unmatched_files: true
           generate_release_notes: true
           overwrite_files: true
+
+  build-python:
+    name: Build Python sdist and wheel
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build dependencies
+        run: python -m pip install --upgrade pip build
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+          if-no-files-found: error
+
+  publish-testpypi:
+    name: Publish to TestPyPI
+    needs: build-python
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/oh-my-wrist
+    permissions:
+      id-token: write
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Extract version from distribution filename
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          whl="$(ls dist/*.whl | head -n 1)"
+          filename="$(basename "$whl")"
+          version="$(echo "$filename" | sed -E 's/^[^-]+-([^-]+)-.*/\1/')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for TestPyPI to index the package
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          echo "Waiting for oh-my-wrist==$version on TestPyPI..."
+          for i in $(seq 1 30); do
+            if pip index versions oh-my-wrist \
+                --index-url https://test.pypi.org/simple/ 2>/dev/null \
+                | grep -q "$version"; then
+              echo "Package indexed after attempt $i."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::warning title=TestPyPI indexing slow::Package not yet visible after 5 minutes. Attempting install anyway."
+
+      - name: Verify installation from TestPyPI
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          python -m pip install \
+            --index-url https://test.pypi.org/simple/ \
+            --extra-index-url https://pypi.org/simple/ \
+            "oh-my-wrist==$version"
+          oh-my-wrist --version
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: publish-testpypi
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/oh-my-wrist
+    permissions:
+      id-token: write
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

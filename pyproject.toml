@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oh-my-wrist"
-version = "0.1.1"
+version = "0.1.3"
 description = "Display real-time AI coding assistant activity on a Garmin smartwatch via BLE."
 readme = "README.md"
 license = "BSD-3-Clause"
