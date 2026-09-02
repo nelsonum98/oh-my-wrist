@@ -20,10 +20,12 @@ A locked spec plus a proven data path, handed to a Codex executor to build: this
 
 <!-- one line per resolved ticket: [title](issues/NN-slug.md) - gist -->
 
+- [Upstream internals: how oh-my-wrist moves events and usage to the watch](issues/01-upstream-internals.md) - providers hardcoded two-way on daemon and watch; usage fetch is session-gated but push is not; Notification type and SubagentStop unused; statusLine patch clobbers settings; BLE untestable in simulator.
+
 ## Not yet specified
 
 - **herdr as a unified event source.** `herdr` already tracks Claude Code and Codex session state on this Mac. It may be a cleaner source for "job finished" than per-harness hooks. Revisit once the internals research shows how upstream ingests events.
-- **Coexistence with existing hooks.** Upstream's `install` patches `~/.claude/settings.json` hooks and chains the statusLine; the Codex `notify` key is already taken. How the fork installs without clobbering the security hooks, herdr hook, or Computer Use notify is unclear until the install path is read.
+- **Coexistence with existing hooks.** Hook patches are additive (research 01). Remaining questions: the statusLine overwrite, and the occupied Codex `notify` key; both fold into tickets 05 and 08.
 - **Daemon lifecycle.** Upstream registers its own launchd service; whether to keep that, rename it under `com.nelson.*`, or fold into the automations repo.
 - **Out-of-range behaviour.** What the watch shows when the Mac is out of BLE range (stale marker, last-updated time) and whether alerts queue.
 - **OpenCode surface.** Whether to keep, ignore, or remove OpenCode support in the fork.
