@@ -21,6 +21,7 @@ A locked spec plus a proven data path, handed to a Codex executor to build: this
 <!-- one line per resolved ticket: [title](issues/NN-slug.md) - gist -->
 
 - [Upstream internals: how oh-my-wrist moves events and usage to the watch](issues/01-upstream-internals.md) - providers hardcoded two-way on daemon and watch; usage fetch is session-gated but push is not; Notification type and SubagentStop unused; statusLine patch clobbers settings; BLE untestable in simulator.
+- [Codex weekly window: which programmatic source works on this Mac](issues/02-codex-weekly-window.md) - use `codex app-server` `account/rateLimits/read`; pick the window with `windowDurationMins == 10080`; headless OK, ~1.5 s per call; REST endpoint is fallback only.
 
 ## Not yet specified
 
