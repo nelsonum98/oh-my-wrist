@@ -1,7 +1,7 @@
 # Claude weekly window: verify the OAuth usage endpoint and headless access
 
 Type: research
-Status: open
+Status: claimed
 Blocked by: none
 
 ## Question

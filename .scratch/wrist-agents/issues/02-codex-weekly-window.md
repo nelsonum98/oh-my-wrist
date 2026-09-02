@@ -1,7 +1,7 @@
 # Codex weekly window: which programmatic source works on this Mac
 
 Type: research
-Status: open
+Status: claimed
 Blocked by: none
 
 ## Question

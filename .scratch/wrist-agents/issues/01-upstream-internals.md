@@ -1,7 +1,7 @@
 # Upstream internals: how oh-my-wrist moves events and usage to the watch
 
 Type: research
-Status: open
+Status: claimed
 Blocked by: none
 
 ## Question
