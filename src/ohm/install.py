@@ -114,7 +114,7 @@ _CODEX_HOOK_ENTRY = {
     "timeout": 2,
 }
 _CODEX_HOOK_EVENTS = {
-    "SessionEnd": [{"hooks": [_CODEX_HOOK_ENTRY]}],
+    "Stop": [{"hooks": [_CODEX_HOOK_ENTRY]}],
     "SubagentStop": [{"hooks": [_CODEX_HOOK_ENTRY]}],
 }
 
@@ -274,13 +274,24 @@ def patch_codex_hooks() -> None:
         data = {}
     hooks = data.setdefault("hooks", {})
     changed = False
+    # Migrate entries written by older oh-my-wrist versions. Codex SessionEnd
+    # means the conversation was closed/archived or sat idle for 30 minutes;
+    # normal turn completion is Stop. Remove only our entries before installing
+    # the current event set, leaving every unrelated hook untouched.
+    for event in list(hooks):
+        if event in _CODEX_HOOK_EVENTS:
+            continue
+        existing = hooks[event]
+        pruned = _remove_hook_handlers(existing, "codex-hook")
+        if pruned != existing:
+            if pruned:
+                hooks[event] = pruned
+            else:
+                del hooks[event]
+            changed = True
     for event, entries in _CODEX_HOOK_EVENTS.items():
         existing = hooks.setdefault(event, [])
-        pruned = [
-            entry
-            for entry in existing
-            if not _is_hook_present_for(entry, "codex-hook")
-        ]
+        pruned = _remove_hook_handlers(existing, "codex-hook")
         replacement = pruned + entries
         if replacement != existing:
             hooks[event] = replacement
@@ -297,13 +308,12 @@ def remove_codex_hooks() -> None:
     hooks = data.get("hooks", {})
     changed = False
     for event in list(hooks):
-        filtered = [
-            entry
-            for entry in hooks[event]
-            if not _is_hook_present_for(entry, "codex-hook")
-        ]
+        filtered = _remove_hook_handlers(hooks[event], "codex-hook")
         if filtered != hooks[event]:
-            hooks[event] = filtered
+            if filtered:
+                hooks[event] = filtered
+            else:
+                del hooks[event]
             changed = True
     if changed:
         _backup_file(CODEX_HOOKS_PATH, "codex-hooks")
@@ -315,6 +325,28 @@ def _is_hook_present_for(entry: dict, subcommand: str) -> bool:
         _is_ohm_command(hook.get("command"), subcommand)
         for hook in entry.get("hooks", [])
     )
+
+
+def _remove_hook_handlers(entries: list[dict], subcommand: str) -> list[dict]:
+    """Remove only matching handlers while preserving their containing groups."""
+    result: list[dict] = []
+    for entry in entries:
+        handlers = entry.get("hooks")
+        if not isinstance(handlers, list):
+            result.append(entry)
+            continue
+        filtered = [
+            handler
+            for handler in handlers
+            if not _is_ohm_command(handler.get("command"), subcommand)
+        ]
+        if filtered == handlers:
+            result.append(entry)
+        elif filtered:
+            updated = dict(entry)
+            updated["hooks"] = filtered
+            result.append(updated)
+    return result
 
 
 # ---------------------------------------------------------------------------

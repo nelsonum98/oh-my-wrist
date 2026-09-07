@@ -19,6 +19,10 @@ def main() -> None:
         asyncio.run(relay_payload(payload, provider="codex"))
     except Exception:
         pass
+    # Codex command hooks parse stdout as a JSON response. An empty response
+    # means no hook-specific control decision while still satisfying the hook
+    # protocol on success.
+    print("{}")
     sys.exit(0)
 
 
