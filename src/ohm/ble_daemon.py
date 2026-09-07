@@ -80,6 +80,7 @@ from ohm.protocol import (
     MAX_FRAME_LEN,
     MAX_USAGE_LEN,
     NAMED_PIPE_PATH,
+    PROVIDER_USAGE_CHAR_UUID,
     SESSION_CHAR_UUID,
     SOCKET_PATH,
     STATS_CLAUDE_CHAR_UUID,
@@ -90,6 +91,7 @@ from ohm.protocol import (
 )
 from ohm.provider_types import CanonicalEvent
 from ohm.session_state import MultiProviderSessionState
+from ohm.usage_fetchers import fetch_claude_weekly, fetch_codex_weekly
 
 _bless_discoverable_patched = False
 
@@ -295,9 +297,11 @@ class BleDaemon:
         # Last-pushed stats payload per provider; used to suppress redundant
         # notifications — only push when the JSON actually changed.
         self._last_pushed_stats: dict[str, bytes] = {}
-        # Latest Claude usage quota (session = 5-hour, week = 7-day) as int
-        # percentages; -1 = unknown/absent.  Fed by the statusLine relay.
-        self._usage: dict[str, int] = {"s": -1, "w": -1}
+        # Weekly-only usage percentages: c=Claude, x=Codex, -1=unknown.
+        # Kept below one default ATT notification (JSON is at most 17 bytes).
+        self._usage: dict[str, int] = {"c": -1, "x": -1}
+        # Released clients use s=Claude five-hour and w=Claude seven-day.
+        self._legacy_usage: dict[str, int] = {"s": -1, "w": -1}
         # Last-pushed usage payload, for redundant-notification suppression.
         self._last_pushed_usage: bytes = b""
         # Async queue serializing all BLE notifications with inter-notification
@@ -410,6 +414,13 @@ class BleDaemon:
             None,
             GATTAttributePermissions.readable,
         )
+        await server.add_new_characteristic(
+            target_service_uuid,
+            PROVIDER_USAGE_CHAR_UUID,
+            GATTCharacteristicProperties.read | GATTCharacteristicProperties.notify,
+            None,
+            GATTAttributePermissions.readable,
+        )
 
         try:
             await server.start()
@@ -428,6 +439,9 @@ class BleDaemon:
                 self._multi.payload_for("opencode")
             )
             server.get_characteristic(USAGE_CHAR_UUID).value = bytearray(
+                self._legacy_usage_payload()
+            )
+            server.get_characteristic(PROVIDER_USAGE_CHAR_UUID).value = bytearray(
                 self._usage_payload()
             )
             self._server = server
@@ -1338,6 +1352,8 @@ class BleDaemon:
             return "STATS_OPENCODE"
         if u == USAGE_CHAR_UUID.upper():
             return "USAGE"
+        if u == PROVIDER_USAGE_CHAR_UUID.upper():
+            return "PROVIDER_USAGE"
         return uuid[:8]
 
     def _handle_read(
@@ -1367,6 +1383,10 @@ class BleDaemon:
             logger.info("GATT read: {} ({} bytes)", name, len(val))
             return val
         if uuid == USAGE_CHAR_UUID.upper():
+            val = bytearray(self._legacy_usage_payload())
+            logger.info("GATT read: {} ({} bytes)", name, len(val))
+            return val
+        if uuid == PROVIDER_USAGE_CHAR_UUID.upper():
             val = bytearray(self._usage_payload())
             logger.info("GATT read: {} ({} bytes)", name, len(val))
             return val
@@ -1561,8 +1581,12 @@ class BleDaemon:
         self._push_stats_for("opencode", force=force)
 
     def _usage_payload(self) -> bytes:
-        """Serialise the latest Claude usage quota to compact JSON ({"s":..,"w":..})."""
+        """Serialise Claude/Codex weekly usage as compact JSON ({"c":..,"x":..})."""
         return json.dumps(self._usage, separators=(",", ":")).encode("utf-8")
+
+    def _legacy_usage_payload(self) -> bytes:
+        """Keep the released watch app's session/weekly wire shape working."""
+        return json.dumps(self._legacy_usage, separators=(",", ":")).encode("utf-8")
 
     def _push_usage(self, force: bool = False) -> None:
         """Update the USAGE characteristic value and notify, suppressing identical payloads."""
@@ -1570,18 +1594,26 @@ class BleDaemon:
             return
         try:
             payload = self._usage_payload()
-            if len(payload) > MAX_USAGE_LEN:
+            legacy_payload = self._legacy_usage_payload()
+            payload_signature = legacy_payload + b"|" + payload
+            if len(payload) > MAX_USAGE_LEN or len(legacy_payload) > MAX_USAGE_LEN:
                 logger.warning(
                     "Usage payload too large ({} > {} bytes); skipping",
                     len(payload),
                     MAX_USAGE_LEN,
                 )
                 return
-            if not force and self._last_pushed_usage == payload:
+            if not force and self._last_pushed_usage == payload_signature:
                 return
-            self._server.get_characteristic(USAGE_CHAR_UUID).value = bytearray(payload)
+            self._server.get_characteristic(USAGE_CHAR_UUID).value = bytearray(
+                legacy_payload
+            )
+            self._server.get_characteristic(PROVIDER_USAGE_CHAR_UUID).value = bytearray(
+                payload
+            )
             self._enqueue_notify(USAGE_CHAR_UUID)
-            self._last_pushed_usage = payload
+            self._enqueue_notify(PROVIDER_USAGE_CHAR_UUID)
+            self._last_pushed_usage = payload_signature
             logger.debug("Usage pushed ({} bytes)", len(payload))
         except Exception as exc:
             logger.warning("Failed to update usage: {}", exc)
@@ -1727,6 +1759,37 @@ class BleDaemon:
                     self._push_stats()
                     self._push_usage()
 
+    async def _periodic_usage_task(self) -> None:
+        """Refresh both weekly subscription windows every five minutes."""
+        while not self._stop_event.is_set():
+            try:
+                claude, codex = await asyncio.gather(
+                    asyncio.to_thread(fetch_claude_weekly),
+                    asyncio.to_thread(fetch_codex_weekly),
+                )
+                next_usage = {
+                    "c": claude.used_percent if claude is not None else -1,
+                    "x": codex.used_percent if codex is not None else -1,
+                }
+                changed = self._usage != next_usage
+                self._usage = next_usage
+                if self._legacy_usage["w"] != next_usage["c"]:
+                    self._legacy_usage["w"] = next_usage["c"]
+                    changed = True
+                if changed:
+                    logger.info(
+                        "Weekly usage refreshed (Claude={}%, Codex={}%)",
+                        self._usage["c"],
+                        self._usage["x"],
+                    )
+                    self._push_usage()
+            except Exception as exc:
+                logger.warning("Weekly usage refresh failed: {}", exc)
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=300)
+            except asyncio.TimeoutError:
+                pass
+
     # ------------------------------------------------------------------
     # IPC message processing (shared by Unix and Windows paths)
     # ------------------------------------------------------------------
@@ -1755,7 +1818,7 @@ class BleDaemon:
             asyncio.ensure_future(self._apply_connection_id(connection_id))
             return
 
-        # Usage quota (from the Claude statusLine relay) is not a history
+        # Usage quota is not a history
         # event: update the USAGE characteristic and return without touching
         # the session-state engine or the history frame.  Always intercepted
         # here (any provider) so "usage" never reaches the canonical-event
@@ -1763,10 +1826,10 @@ class BleDaemon:
         if isinstance(msg, CanonicalIpcMessage) and msg.canonical_event == "usage":
             if provider == "claude":
                 meta = msg.meta or {}
-                self._usage = {
-                    "s": _clamp_pct(meta.get("s", -1)),
-                    "w": _clamp_pct(meta.get("w", -1)),
-                }
+                session = _clamp_pct(meta.get("s", -1))
+                weekly = _clamp_pct(meta.get("w", -1))
+                self._legacy_usage = {"s": session, "w": weekly}
+                self._usage["c"] = weekly
                 logger.debug("Usage update: {}", self._usage)
                 self._push_usage()
             return
@@ -1951,6 +2014,7 @@ class BleDaemon:
             await self._setup_ble()
 
             stats_task = asyncio.ensure_future(self._periodic_stats_task())
+            usage_task = asyncio.ensure_future(self._periodic_usage_task())
             notify_task = asyncio.ensure_future(self._drain_notify_queue())
             conn_monitor_task = asyncio.ensure_future(self._connection_monitor_task())
 
@@ -1962,10 +2026,15 @@ class BleDaemon:
                 await self._start_pipe_server()
 
             stats_task.cancel()
+            usage_task.cancel()
             notify_task.cancel()
             conn_monitor_task.cancel()
             try:
                 await stats_task
+            except asyncio.CancelledError:
+                pass
+            try:
+                await usage_task
             except asyncio.CancelledError:
                 pass
             try:

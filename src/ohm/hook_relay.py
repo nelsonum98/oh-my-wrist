@@ -48,6 +48,8 @@ from ohm.status_formatter import is_destructive_command
 # Silence loguru to stderr by default so Claude Code does not see noise.
 logger.remove()
 
+_IPC_TIMEOUT_SECONDS = 0.25
+
 
 def _read_stdin() -> dict:
     """Read and parse JSON from stdin; return empty dict on any failure."""
@@ -67,8 +69,14 @@ def _determine_alert_type(event: HookEvent, payload: dict) -> int:
     tool = (event.tool_name or "").strip()
     inp = event.tool_input or {}
 
+    if ce == "Notification" and event.notification_type == "agent_completed":
+        return ALERT_AGENT_DONE
+
     if ce == "Notification":
         return ALERT_IDLE_WAITING
+
+    if ce in ("SessionEnd", "SubagentStop"):
+        return ALERT_AGENT_DONE
 
     if ce == "Stop":
         return ALERT_SESSION_DONE
@@ -85,14 +93,18 @@ def _determine_alert_type(event: HookEvent, payload: dict) -> int:
     return ALERT_NONE
 
 
-async def _relay(payload: dict) -> None:
+async def relay_payload(payload: dict, provider: str = "claude") -> None:
     """Parse, adapt, and relay a single hook event to the daemon."""
     hook_event = HookEvent.model_validate(payload)
     canonical = adapt_claude_hook(hook_event, raw_payload=payload)
     alert_type = _determine_alert_type(hook_event, payload)
 
+    if canonical.canonical_event.startswith("job_"):
+        base_label = canonical.label or "job"
+        canonical.label = f"{provider}:{base_label}"
+
     msg = CanonicalIpcMessage(
-        provider="claude",
+        provider=provider,
         provider_event=hook_event.event,
         canonical_event=canonical.canonical_event,
         session_id=hook_event.session_id,
@@ -104,14 +116,16 @@ async def _relay(payload: dict) -> None:
         ts=time.time(),
         meta={"raw": payload},
     )
-    await send_to_daemon(msg)
+    # Lifecycle hooks sit on provider shutdown paths. Bound the local-only IPC
+    # write so a stale socket can never delay Claude Code or Codex completion.
+    await asyncio.wait_for(send_to_daemon(msg), timeout=_IPC_TIMEOUT_SECONDS)
 
 
 def main() -> None:
     """Entry point: always exits 0 regardless of errors."""
     payload = _read_stdin()
     try:
-        asyncio.run(_relay(payload))
+        asyncio.run(relay_payload(payload))
     except Exception:
         # Daemon not running, socket unavailable, or any other error —
         # fail silently so Claude Code is never blocked.

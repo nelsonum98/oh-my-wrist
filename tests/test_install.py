@@ -18,6 +18,8 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 
 # We import the module under test after patching the settings path
 from ohm.install import (
@@ -147,12 +149,18 @@ class TestPatchClaudeSettings:
         data = _read_settings(settings_path)
         assert "hooks" in data
 
-    def test_all_four_hook_events_added(self, tmp_path):
+    def test_all_claude_hook_events_added(self, tmp_path):
         settings_path = tmp_path / ".claude" / "settings.json"
         with patch("ohm.install.CLAUDE_SETTINGS_PATH", settings_path):
             patch_claude_settings()
         data = _read_settings(settings_path)
-        for event in ("PreToolUse", "PostToolUse", "Notification", "Stop"):
+        for event in (
+            "PreToolUse",
+            "PostToolUse",
+            "Notification",
+            "Stop",
+            "SubagentStop",
+        ):
             assert event in data["hooks"], f"Missing hook event: {event}"
 
     def test_hook_command_present_in_each_event(self, tmp_path):
@@ -224,15 +232,16 @@ class TestPatchClaudeSettings:
         )
         assert other_present, "Existing hook was removed by patch_claude_settings"
 
-    def test_handles_malformed_json_gracefully(self, tmp_path):
+    def test_refuses_to_overwrite_malformed_json(self, tmp_path):
         settings_path = tmp_path / ".claude" / "settings.json"
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         settings_path.write_text("{not valid json}", encoding="utf-8")
-        with patch("ohm.install.CLAUDE_SETTINGS_PATH", settings_path):
-            # Should not raise — should overwrite with fresh settings
+        with (
+            patch("ohm.install.CLAUDE_SETTINGS_PATH", settings_path),
+            pytest.raises(ValueError, match="invalid JSON"),
+        ):
             patch_claude_settings()
-        data = _read_settings(settings_path)
-        assert "hooks" in data
+        assert settings_path.read_text(encoding="utf-8") == "{not valid json}"
 
     def test_preserves_non_hook_settings_keys(self, tmp_path):
         settings_path = tmp_path / ".claude" / "settings.json"
@@ -243,6 +252,29 @@ class TestPatchClaudeSettings:
         data = _read_settings(settings_path)
         assert data.get("version") == 42
         assert data.get("theme") == "dark"
+
+    def test_preserves_statusline_options_while_replacing_command(self, tmp_path):
+        settings_path = tmp_path / ".claude" / "settings.json"
+        existing = {
+            "statusLine": {
+                "type": "command",
+                "command": "existing-status",
+                "padding": 2,
+                "refreshInterval": 300,
+            }
+        }
+        _write_settings(settings_path, existing)
+        with (
+            patch("ohm.install.CLAUDE_SETTINGS_PATH", settings_path),
+            patch("ohm.install._PREV_STATUSLINE_PATH", tmp_path / "prev"),
+            patch("ohm.install._PREV_STATUSLINE_JSON_PATH", tmp_path / "prev.json"),
+        ):
+            from ohm.install import patch_claude_statusline
+
+            patch_claude_statusline()
+        result = _read_settings(settings_path)["statusLine"]
+        assert result["padding"] == 2
+        assert result["refreshInterval"] == 300
 
     def test_output_file_is_valid_json(self, tmp_path):
         settings_path = tmp_path / ".claude" / "settings.json"
@@ -314,12 +346,16 @@ class TestRemoveClaudeHooks:
         with patch("ohm.install.CLAUDE_SETTINGS_PATH", settings_path):
             remove_claude_hooks()  # must not raise
 
-    def test_no_error_on_malformed_json(self, tmp_path):
+    def test_refuses_to_modify_malformed_json(self, tmp_path):
         settings_path = tmp_path / ".claude" / "settings.json"
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         settings_path.write_text("{bad json}", encoding="utf-8")
-        with patch("ohm.install.CLAUDE_SETTINGS_PATH", settings_path):
-            remove_claude_hooks()  # must not raise
+        with (
+            patch("ohm.install.CLAUDE_SETTINGS_PATH", settings_path),
+            pytest.raises(ValueError, match="invalid JSON"),
+        ):
+            remove_claude_hooks()
+        assert settings_path.read_text(encoding="utf-8") == "{bad json}"
 
     def test_idempotent_double_removal(self, tmp_path):
         settings_path = tmp_path / ".claude" / "settings.json"

@@ -8,7 +8,7 @@
     <string id="HeaderPrompt">[ admin@wrist:~$ ]</string>
     <string id="StatsHeaderClaude">[ claude.session ]</string>
     <string id="StatsHeaderOpenCode">[ opencode.session ]</string>
-    <string id="UsageHeaderClaude">[ claude.usage ]</string>
+    <string id="UsageHeaderWeekly">[ weekly.usage ]</string>
 
     <!-- Connection ID menu/editor -->
     <string id="ConnectionIdMenuLabel">Set id</string>

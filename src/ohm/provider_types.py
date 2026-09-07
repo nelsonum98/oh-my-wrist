@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field
 # Provider identifiers
 # ---------------------------------------------------------------------------
 
-Provider = Literal["claude", "opencode"]
+Provider = Literal["claude", "codex", "opencode"]
 
 # ---------------------------------------------------------------------------
 # Canonical event type literals
@@ -53,6 +53,9 @@ CanonicalEventType = Literal[
     "permission_reply",
     "command",
     "status",
+    "job_done",
+    "job_needs_input",
+    "job_failed",
     "unknown",
 ]
 

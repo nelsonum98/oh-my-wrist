@@ -80,10 +80,11 @@ ALERT_CHAR_UUID = "0FA155B3-0C21-723A-970C-9821F1C5FFAB"
 STATS_CLAUDE_CHAR_UUID = "0FA155B4-0C21-723A-970C-9821F1C5FFAB"
 STATS_OPENCODE_CHAR_UUID = "0FA155B5-0C21-723A-970C-9821F1C5FFAB"
 
-# Claude usage / rate-limit quota payload (compact JSON, UTF-8, notifiable).
-# Carries the /usage-equivalent session (5-hour) and week (7-day) used
-# percentages.  Claude-only — OpenCode has no equivalent.
+# Legacy usage payload retained for released watch clients ({"s":..,"w":..}).
 USAGE_CHAR_UUID = "0FA155B6-0C21-723A-970C-9821F1C5FFAB"
+
+# Provider usage payload for Claude and Codex ({"c":..,"x":..}).
+PROVIDER_USAGE_CHAR_UUID = "0FA155B7-0C21-723A-970C-9821F1C5FFAB"
 
 # History wire protocol
 # ----------------------
@@ -104,10 +105,10 @@ MAX_FRAME_LEN = 4 + ENTRY_TEXT_MAX  # = 22, fits ATT MTU 23
 MAX_STATS_LEN = 100
 
 # Maximum usage payload length in bytes. Realistic payloads are tiny
-# ({"s":100,"w":100} == 17 bytes) and must fit a single notify on the default
+# ({"c":100,"x":100} == 17 bytes) and must fit a single notify on the default
 # ATT MTU of 23 (~20 bytes usable). Enforced defensively in the daemon
 # (_push_usage skips oversized payloads).
-MAX_USAGE_LEN = 40
+MAX_USAGE_LEN = 20
 
 # Alert type constants
 ALERT_NONE = 0x00
@@ -146,6 +147,8 @@ EventType = Literal[
     "Notification",
     "Stop",
     "SessionStart",
+    "SessionEnd",
+    "SubagentStop",
     "Unknown",
 ]
 
@@ -162,6 +165,11 @@ class HookEvent(BaseModel):
     tool_name: str | None = Field(default=None)
     tool_input: dict | None = Field(default=None)
     session_id: str | None = Field(default=None)
+    notification_type: str | None = Field(default=None)
+    agent_id: str | None = Field(default=None)
+    agent_type: str | None = Field(default=None)
+    cwd: str | None = Field(default=None)
+    message: str | None = Field(default=None)
 
     model_config = {"populate_by_name": True}
 

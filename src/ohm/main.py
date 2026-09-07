@@ -79,7 +79,7 @@ def _is_running(pid: int) -> bool:
 def cli() -> None:
     """oh-my-wrist — Display AI coding assistant activity on your Garmin watch.
 
-    Supports Claude Code and OpenCode as providers.
+    Supports Claude Code, Codex, and OpenCode as providers.
     """
 
 
@@ -222,8 +222,11 @@ def status() -> None:
 @cli.command()
 @click.option(
     "--provider",
-    type=click.Choice(["claude", "opencode", "both"], case_sensitive=False),
-    default="both",
+    type=click.Choice(
+        ["claude", "codex", "opencode", "agents", "both", "all"],
+        case_sensitive=False,
+    ),
+    default="all",
     show_default=True,
     help="Which provider(s) to configure.",
 )
@@ -240,17 +243,19 @@ def install(provider: str, project_root: Path | None) -> None:
         install_service,
         patch_claude_settings,
         patch_claude_statusline,
+        patch_codex_hooks,
         install_opencode_plugin,
     )
 
     step = 1
     total = (
-        (1 if provider in ("claude", "both") else 0)
-        + (1 if provider in ("opencode", "both") else 0)
+        (1 if provider in ("claude", "agents", "both", "all") else 0)
+        + (1 if provider in ("codex", "agents", "all") else 0)
+        + (1 if provider in ("opencode", "both", "all") else 0)
         + 1
     )
 
-    if provider in ("claude", "both"):
+    if provider in ("claude", "agents", "both", "all"):
         click.echo(f"Step {step}/{total} — Patching Claude Code settings.json…")
         try:
             patch_claude_settings()
@@ -260,7 +265,16 @@ def install(provider: str, project_root: Path | None) -> None:
             click.echo(f"  ✗ Failed to patch settings: {exc}", err=True)
         step += 1
 
-    if provider in ("opencode", "both"):
+    if provider in ("codex", "agents", "all"):
+        click.echo(f"Step {step}/{total} — Patching Codex hooks.json…")
+        try:
+            patch_codex_hooks()
+            click.echo("  ✔ Codex lifecycle hooks configured; notify preserved.")
+        except Exception as exc:
+            click.echo(f"  ✗ Failed to patch Codex hooks: {exc}", err=True)
+        step += 1
+
+    if provider in ("opencode", "both", "all"):
         click.echo(f"Step {step}/{total} — Installing OpenCode plugin…")
         try:
             ok = install_opencode_plugin(project_root)
@@ -290,8 +304,11 @@ def install(provider: str, project_root: Path | None) -> None:
 @cli.command()
 @click.option(
     "--provider",
-    type=click.Choice(["claude", "opencode", "both"], case_sensitive=False),
-    default="both",
+    type=click.Choice(
+        ["claude", "codex", "opencode", "agents", "both", "all"],
+        case_sensitive=False,
+    ),
+    default="all",
     show_default=True,
     help="Which provider(s) to remove.",
 )
@@ -307,11 +324,12 @@ def uninstall(provider: str, project_root: Path | None) -> None:
     from ohm.install import (
         remove_claude_hooks,
         remove_claude_statusline,
+        remove_codex_hooks,
         remove_opencode_plugin,
         uninstall_service,
     )
 
-    if provider in ("claude", "both"):
+    if provider in ("claude", "agents", "both", "all"):
         click.echo("Removing Claude Code hooks…")
         try:
             remove_claude_hooks()
@@ -320,7 +338,15 @@ def uninstall(provider: str, project_root: Path | None) -> None:
         except Exception as exc:
             click.echo(f"  ✗ {exc}", err=True)
 
-    if provider in ("opencode", "both"):
+    if provider in ("codex", "agents", "all"):
+        click.echo("Removing Codex hooks…")
+        try:
+            remove_codex_hooks()
+            click.echo("  ✔ Codex hooks removed; notify preserved.")
+        except Exception as exc:
+            click.echo(f"  ✗ {exc}", err=True)
+
+    if provider in ("opencode", "both", "all"):
         click.echo("Removing OpenCode plugin…")
         try:
             remove_opencode_plugin(project_root)
@@ -351,6 +377,14 @@ def hook_cmd() -> None:
     relay_main()
 
 
+@cli.command(name="codex-hook", hidden=True)
+def codex_hook_cmd() -> None:
+    """Entry point invoked by Codex lifecycle hooks (reads JSON from stdin)."""
+    from ohm.codex_hook_relay import main as relay_main
+
+    relay_main()
+
+
 # ---------------------------------------------------------------------------
 # statusline  (called by Claude Code statusLine command)
 # ---------------------------------------------------------------------------
@@ -373,7 +407,7 @@ def statusline_cmd() -> None:
 @click.argument("message", default="✏️ test.py")
 @click.option(
     "--provider",
-    type=click.Choice(["claude", "opencode"], case_sensitive=False),
+    type=click.Choice(["claude", "codex", "opencode"], case_sensitive=False),
     default="claude",
     show_default=True,
     help="Simulate a message from this provider.",
@@ -384,7 +418,9 @@ def test(message: str, provider: str) -> None:
 
     msg = CanonicalIpcMessage(
         provider=provider,
-        provider_event="PreToolUse" if provider == "claude" else "tool.execute.before",
+        provider_event=(
+            "PreToolUse" if provider == "claude" else "tool.execute.before"
+        ),
         canonical_event="tool_start",
         label=message,
         active=True,

@@ -24,6 +24,7 @@ Unknown / other              → unknown
 
 from __future__ import annotations
 
+import os
 import time
 
 from ohm.protocol import HookEvent
@@ -39,6 +40,8 @@ _CLAUDE_EVENT_MAP: dict[str, CanonicalEventType] = {
     "Notification": "session_idle",
     "Stop": "session_stop",
     "SessionStart": "session_start",
+    "SessionEnd": "job_done",
+    "SubagentStop": "job_done",
 }
 
 
@@ -61,6 +64,11 @@ def adapt_claude_hook(
     label: str | None = None
     path: str | None = None
 
+    if event.event == "Notification" and event.notification_type == "agent_completed":
+        canonical = "job_done"
+    elif event.event == "Notification" and event.notification_type == "agent_needs_input":
+        canonical = "job_needs_input"
+
     if event.event == "PreToolUse":
         tool = (event.tool_name or "").strip()
         if tool == "Bash":
@@ -77,6 +85,13 @@ def adapt_claude_hook(
             label = "todo update"
         else:
             label = event.tool_name
+    elif canonical.startswith("job_"):
+        label = (
+            event.agent_type
+            or event.message
+            or (os.path.basename(event.cwd) if event.cwd else None)
+            or "job"
+        )
 
     meta: dict = {}
     if raw_payload is not None:
@@ -90,7 +105,10 @@ def adapt_claude_hook(
         tool_name=event.tool_name,
         label=label,
         path=path,
-        active=(canonical not in ("session_stop", "session_error")),
+        active=(
+            canonical
+            not in ("session_stop", "session_error", "job_done", "job_failed")
+        ),
         ts=time.time(),
         meta=meta,
     )

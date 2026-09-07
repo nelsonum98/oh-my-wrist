@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-PLIST_LABEL = "com.oh-my-wrist.daemon"
+PLIST_LABEL = "com.nelson.oh-my-wrist"
 LAUNCH_AGENTS_DIR = Path.home() / "Library" / "LaunchAgents"
 PLIST_PATH = LAUNCH_AGENTS_DIR / f"{PLIST_LABEL}.plist"
 
@@ -47,7 +47,7 @@ _PLIST_TEMPLATE = """\
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <string>{user_bin}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
 </dict>
 </plist>
@@ -65,6 +65,7 @@ def install_service() -> None:
         label=PLIST_LABEL,
         executable=executable,
         log_dir=log_dir,
+        user_bin=Path.home() / ".local" / "bin",
     )
     PLIST_PATH.write_text(plist_content)
 

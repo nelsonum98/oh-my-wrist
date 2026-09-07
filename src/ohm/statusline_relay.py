@@ -32,6 +32,7 @@ from ohm.protocol import CanonicalIpcMessage, send_to_daemon
 # Saved original statusLine command, written by the installer when it takes
 # over the statusLine setting.  Chained so the user's display is preserved.
 _PREV_STATUSLINE_PATH = Path.home() / ".oh-my-wrist" / "prev_statusline"
+_IPC_TIMEOUT_SECONDS = 0.25
 
 
 def _read_stdin() -> str:
@@ -102,7 +103,9 @@ def main() -> None:
     )
 
     try:
-        asyncio.run(send_to_daemon(msg))
+        asyncio.run(
+            asyncio.wait_for(send_to_daemon(msg), timeout=_IPC_TIMEOUT_SECONDS)
+        )
     except Exception:
         pass
 

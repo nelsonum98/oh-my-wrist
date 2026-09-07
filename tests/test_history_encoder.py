@@ -218,6 +218,21 @@ class TestLifecycleEvents:
         assert icon == IconId.STATUS_DOT
         assert text == "indexing"
 
+    def test_job_done_includes_label(self):
+        icon, flags, text = _classify(_ev("job_done", label="codex:tests"))
+        assert icon == IconId.CHECK
+        assert flags & FLAG_CLEAR_PREV_SPINNER
+        assert text == "codex:tests"
+
+    def test_job_needs_input_is_accented(self):
+        icon, flags, text = _classify(
+            _ev("job_needs_input", label="claude:review")
+        )
+        assert icon == IconId.QUESTION
+        assert flags & FLAG_ACCENT
+        assert flags & FLAG_CLEAR_PREV_SPINNER
+        assert text == "claude:review"
+
     def test_unknown_event_uses_question(self):
         icon, _, text = _classify(_ev("unknown", provider_event="weird.event"))
         assert icon == IconId.QUESTION
@@ -248,6 +263,9 @@ class TestEncodeEvent:
             "permission_reply",
             "command",
             "status",
+            "job_done",
+            "job_needs_input",
+            "job_failed",
             "unknown",
         ):
             frame = encode_event(

@@ -24,6 +24,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from loguru import logger
@@ -85,6 +86,7 @@ _HOOK_EVENTS = {
     "PostToolUse": [{"matcher": "", "hooks": [_HOOK_ENTRY]}],
     "Notification": [{"hooks": [_HOOK_ENTRY]}],
     "Stop": [{"hooks": [_HOOK_ENTRY]}],
+    "SubagentStop": [{"hooks": [_HOOK_ENTRY]}],
 }
 
 CLAUDE_SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
@@ -95,6 +97,26 @@ CLAUDE_SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 _STATUSLINE_COMMAND = _ohm_command("statusline")
 _STATUSLINE_ENTRY = {"type": "command", "command": _STATUSLINE_COMMAND}
 _PREV_STATUSLINE_PATH = Path.home() / ".oh-my-wrist" / "prev_statusline"
+_PREV_STATUSLINE_JSON_PATH = Path.home() / ".oh-my-wrist" / "prev_statusline.json"
+
+
+def _statusline_state_paths() -> tuple[Path, Path]:
+    """Return state paths rooted beside the active Claude config home."""
+    config_root = CLAUDE_SETTINGS_PATH.parent.parent
+    state_root = config_root / ".oh-my-wrist"
+    return state_root / "prev_statusline", state_root / "prev_statusline.json"
+
+CODEX_HOOKS_PATH = Path.home() / ".codex" / "hooks.json"
+_CODEX_HOOK_COMMAND = _ohm_command("codex-hook")
+_CODEX_HOOK_ENTRY = {
+    "type": "command",
+    "command": _CODEX_HOOK_COMMAND,
+    "timeout": 2,
+}
+_CODEX_HOOK_EVENTS = {
+    "SessionEnd": [{"hooks": [_CODEX_HOOK_ENTRY]}],
+    "SubagentStop": [{"hooks": [_CODEX_HOOK_ENTRY]}],
+}
 
 # ---------------------------------------------------------------------------
 # OpenCode plugin configuration
@@ -156,6 +178,23 @@ def _atomic_write_text(path: Path, text: str) -> None:
         raise
 
 
+def _backup_file(path: Path, label: str) -> Path | None:
+    """Copy an existing config into the private oh-my-wrist backup directory."""
+    if not path.exists():
+        return None
+    # Keep isolated tests and alternate config roots isolated too. For the
+    # normal ~/.claude and ~/.codex paths this resolves to the real home.
+    config_root = path.parent.parent if path.parent.name.startswith(".") else Path.home()
+    backup_dir = config_root / ".oh-my-wrist" / "backups"
+    backup_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    backup = backup_dir / (
+        f"{label}-{time.strftime('%Y%m%d-%H%M%S')}-{time.time_ns() % 1_000_000_000}.bak"
+    )
+    backup.write_bytes(path.read_bytes())
+    os.chmod(backup, 0o600)
+    return backup
+
+
 # ---------------------------------------------------------------------------
 # Claude Code hook patching
 # ---------------------------------------------------------------------------
@@ -196,6 +235,7 @@ def patch_claude_settings() -> None:
             logger.info("Hook for event '{}' already current — skipping", event)
 
     if changed:
+        _backup_file(CLAUDE_SETTINGS_PATH, "claude-settings")
         _atomic_write_json(CLAUDE_SETTINGS_PATH, settings)
         logger.info("Claude Code settings patched at {}", CLAUDE_SETTINGS_PATH)
     else:
@@ -218,8 +258,63 @@ def remove_claude_hooks() -> None:
             logger.info("Removed hook for event '{}'", event)
 
     if changed:
+        _backup_file(CLAUDE_SETTINGS_PATH, "claude-settings")
         _atomic_write_json(CLAUDE_SETTINGS_PATH, settings)
         logger.info("Claude Code hooks removed from {}", CLAUDE_SETTINGS_PATH)
+
+
+def patch_codex_hooks() -> None:
+    """Add lifecycle hooks without changing Codex's occupied notify command."""
+    if CODEX_HOOKS_PATH.exists():
+        try:
+            data = json.loads(CODEX_HOOKS_PATH.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Codex hooks file is invalid JSON: {exc}") from exc
+    else:
+        data = {}
+    hooks = data.setdefault("hooks", {})
+    changed = False
+    for event, entries in _CODEX_HOOK_EVENTS.items():
+        existing = hooks.setdefault(event, [])
+        pruned = [
+            entry
+            for entry in existing
+            if not _is_hook_present_for(entry, "codex-hook")
+        ]
+        replacement = pruned + entries
+        if replacement != existing:
+            hooks[event] = replacement
+            changed = True
+    if changed:
+        _backup_file(CODEX_HOOKS_PATH, "codex-hooks")
+        _atomic_write_json(CODEX_HOOKS_PATH, data)
+
+
+def remove_codex_hooks() -> None:
+    if not CODEX_HOOKS_PATH.exists():
+        return
+    data = json.loads(CODEX_HOOKS_PATH.read_text(encoding="utf-8"))
+    hooks = data.get("hooks", {})
+    changed = False
+    for event in list(hooks):
+        filtered = [
+            entry
+            for entry in hooks[event]
+            if not _is_hook_present_for(entry, "codex-hook")
+        ]
+        if filtered != hooks[event]:
+            hooks[event] = filtered
+            changed = True
+    if changed:
+        _backup_file(CODEX_HOOKS_PATH, "codex-hooks")
+        _atomic_write_json(CODEX_HOOKS_PATH, data)
+
+
+def _is_hook_present_for(entry: dict, subcommand: str) -> bool:
+    return any(
+        _is_ohm_command(hook.get("command"), subcommand)
+        for hook in entry.get("hooks", [])
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -228,16 +323,17 @@ def remove_claude_hooks() -> None:
 
 
 def _load_claude_settings() -> dict:
-    """Return the parsed settings.json, or {} if absent/invalid."""
+    """Return the parsed settings.json, or {} if absent.
+
+    Invalid user configuration is never overwritten. The caller surfaces the
+    parse error so the user can repair or restore it explicitly.
+    """
     if not CLAUDE_SETTINGS_PATH.exists():
         return {}
     try:
         return json.loads(CLAUDE_SETTINGS_PATH.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        logger.warning(
-            "Existing settings.json is not valid JSON — creating a fresh one"
-        )
-        return {}
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Claude settings file is invalid JSON: {exc}") from exc
 
 
 def patch_claude_statusline() -> None:
@@ -248,28 +344,52 @@ def patch_claude_statusline() -> None:
     through; uninstall restores it.
     """
     settings = _load_claude_settings()
+    prev_path, prev_json_path = _statusline_state_paths()
     existing = settings.get("statusLine")
     existing_cmd = existing.get("command") if isinstance(existing, dict) else None
 
     if existing_cmd == _STATUSLINE_COMMAND:
-        logger.info("statusLine already configured — skipping")
+        # A prior 0.1.x install may have replaced the whole object. Heal any
+        # saved presentation/timing keys without changing the relay command.
+        saved = {}
+        if prev_json_path.exists():
+            candidate = json.loads(
+                prev_json_path.read_text(encoding="utf-8")
+            )
+            if isinstance(candidate, dict):
+                saved = candidate
+        replacement = {**saved, **existing}
+        if replacement != existing:
+            settings["statusLine"] = replacement
+            _backup_file(CLAUDE_SETTINGS_PATH, "claude-settings")
+            _atomic_write_json(CLAUDE_SETTINGS_PATH, settings)
+            logger.info("Restored saved statusLine options")
+        else:
+            logger.info("statusLine already configured — skipping")
         return
 
     # An older oh-my-wrist install (bare command or stale absolute path) is
     # ours, not the user's: upgrade it in place without saving it as the
     # "previous" command to restore on uninstall.
     if _is_ohm_command(existing_cmd, "statusline"):
-        settings["statusLine"] = dict(_STATUSLINE_ENTRY)
+        replacement = dict(existing) if isinstance(existing, dict) else {}
+        replacement.update(_STATUSLINE_ENTRY)
+        settings["statusLine"] = replacement
+        _backup_file(CLAUDE_SETTINGS_PATH, "claude-settings")
         _atomic_write_json(CLAUDE_SETTINGS_PATH, settings)
         logger.info("Upgraded oh-my-wrist statusLine to an absolute command")
         return
 
     # Preserve the user's prior statusLine command for chaining.
     if isinstance(existing_cmd, str):
-        _atomic_write_text(_PREV_STATUSLINE_PATH, existing_cmd)
+        _atomic_write_text(prev_path, existing_cmd)
+        _atomic_write_json(prev_json_path, existing)
         logger.info("Saved existing statusLine for chaining")
 
-    settings["statusLine"] = dict(_STATUSLINE_ENTRY)
+    replacement = dict(existing) if isinstance(existing, dict) else {}
+    replacement.update(_STATUSLINE_ENTRY)
+    settings["statusLine"] = replacement
+    _backup_file(CLAUDE_SETTINGS_PATH, "claude-settings")
     _atomic_write_json(CLAUDE_SETTINGS_PATH, settings)
     logger.info("Claude Code statusLine patched at {}", CLAUDE_SETTINGS_PATH)
 
@@ -277,22 +397,31 @@ def patch_claude_statusline() -> None:
 def remove_claude_statusline() -> None:
     """Restore the saved statusLine (or remove ours) and clear the saved copy."""
     settings = _load_claude_settings()
+    prev_path, prev_json_path = _statusline_state_paths()
     current = settings.get("statusLine")
     current_cmd = current.get("command") if isinstance(current, dict) else None
 
     # Only touch the setting if it is ours (any install form).
     if _is_ohm_command(current_cmd, "statusline"):
-        if _PREV_STATUSLINE_PATH.exists():
-            prev = _PREV_STATUSLINE_PATH.read_text(encoding="utf-8").strip()
-            settings["statusLine"] = {"type": "command", "command": prev}
+        if prev_path.exists():
+            if prev_json_path.exists():
+                settings["statusLine"] = json.loads(
+                    prev_json_path.read_text(encoding="utf-8")
+                )
+            else:
+                prev = prev_path.read_text(encoding="utf-8").strip()
+                settings["statusLine"] = {"type": "command", "command": prev}
             logger.info("Restored previous statusLine")
         else:
             settings.pop("statusLine", None)
             logger.info("Removed oh-my-wrist statusLine")
+        _backup_file(CLAUDE_SETTINGS_PATH, "claude-settings")
         _atomic_write_json(CLAUDE_SETTINGS_PATH, settings)
 
-    if _PREV_STATUSLINE_PATH.exists():
-        _PREV_STATUSLINE_PATH.unlink()
+    if prev_path.exists():
+        prev_path.unlink()
+    if prev_json_path.exists():
+        prev_json_path.unlink()
 
 
 # ---------------------------------------------------------------------------
@@ -587,7 +716,7 @@ def remove_opencode_plugin(project_root: Path | None = None) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def install_all(provider: str = "both", project_root: Path | None = None) -> None:
+def install_all(provider: str = "all", project_root: Path | None = None) -> None:
     """Install hooks/plugins for the specified provider(s).
 
     Parameters
@@ -597,24 +726,30 @@ def install_all(provider: str = "both", project_root: Path | None = None) -> Non
         ``"opencode"`` — OpenCode only.
         ``"both"`` (default) — both providers.
     """
-    if provider in ("claude", "both"):
+    if provider in ("claude", "both", "all"):
         patch_claude_settings()
         patch_claude_statusline()
 
-    if provider in ("opencode", "both"):
+    if provider in ("codex", "all"):
+        patch_codex_hooks()
+
+    if provider in ("opencode", "both", "all"):
         install_opencode_plugin(project_root)
 
     install_service()
     logger.info("Installation complete (provider={})", provider)
 
 
-def uninstall_all(provider: str = "both", project_root: Path | None = None) -> None:
+def uninstall_all(provider: str = "all", project_root: Path | None = None) -> None:
     """Remove hooks/plugins for the specified provider(s)."""
-    if provider in ("claude", "both"):
+    if provider in ("claude", "both", "all"):
         remove_claude_hooks()
         remove_claude_statusline()
 
-    if provider in ("opencode", "both"):
+    if provider in ("codex", "all"):
+        remove_codex_hooks()
+
+    if provider in ("opencode", "both", "all"):
         remove_opencode_plugin(project_root)
 
     uninstall_service()

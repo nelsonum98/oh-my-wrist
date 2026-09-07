@@ -157,6 +157,15 @@ def _classify(ev: CanonicalEvent) -> tuple[int, int, str]:
         text = ev.status_text or label or ""
         return IconId.STATUS_DOT, FLAGS_NONE, text
 
+    if ce == "job_done":
+        return IconId.CHECK, FLAG_CLEAR_PREV_SPINNER, label
+
+    if ce == "job_needs_input":
+        return IconId.QUESTION, FLAG_ACCENT | FLAG_CLEAR_PREV_SPINNER, label
+
+    if ce == "job_failed":
+        return IconId.WARNING, FLAG_ACCENT | FLAG_CLEAR_PREV_SPINNER, label
+
     # unknown / future events
     return IconId.QUESTION, FLAGS_NONE, ev.provider_event or ce
 

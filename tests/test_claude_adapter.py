@@ -24,9 +24,14 @@ def _make_hook(
     tool_name: str | None = None,
     tool_input: dict | None = None,
     session_id: str | None = None,
+    **kwargs,
 ) -> HookEvent:
     return HookEvent(
-        event=event, tool_name=tool_name, tool_input=tool_input, session_id=session_id
+        event=event,
+        tool_name=tool_name,
+        tool_input=tool_input,
+        session_id=session_id,
+        **kwargs,
     )
 
 
@@ -64,6 +69,8 @@ class TestCanonicalEventMapping:
             ("Notification", "session_idle"),
             ("Stop", "session_stop"),
             ("SessionStart", "session_start"),
+            ("SessionEnd", "job_done"),
+            ("SubagentStop", "job_done"),
             ("Unknown", "unknown"),
             ("FutureEvent", "unknown"),
             ("", "unknown"),
@@ -78,6 +85,27 @@ class TestCanonicalEventMapping:
         hook = _make_hook("PreToolUse", "Bash", {"command": "ls"})
         result = adapt_claude_hook(hook)
         assert result.provider_event == "PreToolUse"
+
+    def test_completed_agent_notification_is_job_done(self):
+        hook = _make_hook(
+            "Notification",
+            notification_type="agent_completed",
+            agent_type="worker",
+        )
+        result = adapt_claude_hook(hook)
+        assert result.canonical_event == "job_done"
+        assert result.label == "worker"
+        assert result.active is False
+
+    def test_agent_input_notification_is_distinct(self):
+        hook = _make_hook(
+            "Notification",
+            notification_type="agent_needs_input",
+            message="Choose a device",
+        )
+        result = adapt_claude_hook(hook)
+        assert result.canonical_event == "job_needs_input"
+        assert result.label == "Choose a device"
 
 
 # ---------------------------------------------------------------------------

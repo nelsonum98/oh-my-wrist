@@ -67,15 +67,28 @@ find_monkeyc() {
         return
     fi
 
-    local candidates=("$HOME/.Garmin/ConnectIQ/Sdks"/*/bin/monkeyc)
+    local active_sdk_cfg="$HOME/Library/Application Support/Garmin/ConnectIQ/current-sdk.cfg"
+    if [[ -f "$active_sdk_cfg" ]]; then
+        local active_sdk
+        active_sdk="$(cat "$active_sdk_cfg")"
+        if [[ -x "$active_sdk/bin/monkeyc" ]]; then
+            echo "$active_sdk/bin/monkeyc"
+            return
+        fi
+    fi
+
+    local candidates=(
+        "$HOME/.Garmin/ConnectIQ/Sdks"/*/bin/monkeyc
+        "$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks"/*/bin/monkeyc
+    )
     for c in "${candidates[@]}"; do
         if [[ -x "$c" ]]; then
             echo "$c"
             return
         fi
     done
-    echo "Error: monkeyc not found in ~/.Garmin/ConnectIQ/Sdks/*/bin/" >&2
-    echo "Install the Connect IQ SDK via the VS Code Monkey C extension." >&2
+    echo "Error: monkeyc not found in the Garmin SDK Manager locations." >&2
+    echo "Install the Connect IQ SDK with Garmin Connect IQ SDK Manager." >&2
     exit 1
 }
 
@@ -102,6 +115,7 @@ find_key() {
 
 MODE="all"
 KEY_OVERRIDE=""
+TARGET_DEVICE=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -116,8 +130,16 @@ while [[ $# -gt 0 ]]; do
             KEY_OVERRIDE="$2"
             shift
             ;;
+        --device)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --device requires a Connect IQ product ID" >&2
+                exit 1
+            fi
+            TARGET_DEVICE="$2"
+            shift
+            ;;
         -h|--help)
-            echo "Usage: $0 [release|store|all] [--key /path/to/developer_key]"
+            echo "Usage: $0 [release|store|all] [--device product-id] [--key /path/to/developer_key]"
             echo ""
             echo "  release  Build per-device .prg files (for GitHub releases)"
             echo "  store    Build .iq package (for Connect IQ Store)"
@@ -147,6 +169,21 @@ done < <(sed -nE 's/.*product id="([^"]+)".*/\1/p' "$MANIFEST")
 if [[ ${#DEVICES[@]} -eq 0 ]]; then
     echo "Error: no devices found in $MANIFEST" >&2
     exit 1
+fi
+
+if [[ -n "$TARGET_DEVICE" ]]; then
+    device_found=false
+    for device in "${DEVICES[@]}"; do
+        if [[ "$device" == "$TARGET_DEVICE" ]]; then
+            device_found=true
+            break
+        fi
+    done
+    if [[ "$device_found" != true ]]; then
+        echo "Error: device '$TARGET_DEVICE' is not declared in $MANIFEST" >&2
+        exit 1
+    fi
+    DEVICES=("$TARGET_DEVICE")
 fi
 
 echo "SDK:    $MONKEYC"

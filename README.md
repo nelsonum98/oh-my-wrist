@@ -11,14 +11,14 @@
 ![GitHub last commit](https://img.shields.io/github/last-commit/yazon/oh-my-wrist?color=red)
 ![GitHub License](https://img.shields.io/github/license/yazon/oh-my-wrist)
 
-**oh-my-wrist displays real-time [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview) and [OpenCode](https://opencode.ai) activity on your Garmin smartwatch over Bluetooth Low Energy. See what your AI coding assistant is doing — right on your wrist.**
+**oh-my-wrist displays [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview), Codex, and [OpenCode](https://opencode.ai) activity on your Garmin smartwatch over Bluetooth Low Energy. See weekly Claude/Codex usage and job-completion alerts right on your wrist.**
 
 ## Key Features
 
 - **Real-time BLE updates** — tool calls, file edits, and session state streamed to your watch
 - **Haptic alerts** — vibration patterns for idle, session done, destructive commands, and agent completion
 - **CLI-styled watch UI** — terminal aesthetic with animated amber spinner, event stack, and per-provider stats
-- **Multi-provider** — supports Claude Code and OpenCode simultaneously
+- **Multi-provider** — supports Claude Code, Codex, and OpenCode simultaneously
 - **Cross-platform** — runs on Linux, macOS, and Windows
 - **Quiet hours** — suppress vibrations during configurable time windows
 - **Connection ID filter** — optional 0–255 ID keeps nearby users' watches from pairing with each other
@@ -49,7 +49,8 @@ oh-my-wrist install
 
 This automatically:
 - Patches **Claude Code** hooks in `~/.claude/settings.json`
-- Configures a **Claude Code statusLine** that streams `/usage` quota to the watch (chaining any existing statusLine)
+- Configures a **Claude Code statusLine** that preserves and chains the full existing statusLine configuration
+- Adds **Codex** lifecycle hooks in `~/.codex/hooks.json` without changing Codex's existing `notify` command
 - Installs the **OpenCode** TypeScript plugin (when `opencode` is on PATH)
 - Registers a background **system service** (systemd / launchd / Task Scheduler)
 
@@ -57,7 +58,9 @@ To install a single provider only:
 
 ```bash
 oh-my-wrist install --provider claude
+oh-my-wrist install --provider codex
 oh-my-wrist install --provider opencode
+oh-my-wrist install --provider agents  # Claude Code + Codex
 ```
 
 ### 3. Install the Garmin watch app
@@ -93,7 +96,7 @@ oh-my-wrist start
 oh-my-wrist start --foreground
 ```
 
-Start a Claude Code or OpenCode session — the watch updates automatically.
+Start a Claude Code, Codex, or OpenCode session — the watch updates automatically.
 
 ### Connection Check
 
@@ -117,19 +120,19 @@ python tools/check_connection.py --provider claude
 ### Watch Navigation
 
 Four swipeable views (left/right or UP/DOWN on button watches). History is the
-initial view — swipe/press **UP** for the Claude usage screen, **DOWN** for the
+initial view — swipe/press **UP** for the weekly usage screen, **DOWN** for the
 per-provider stats screens:
 
 | View | Direction from History | Content |
 |------|------------------------|---------|
-| Claude Usage | UP | `/usage`-style quota bars: session (5h) and week (7d), htop-style |
+| Weekly Usage | UP | Weekly Claude and Codex usage bars |
 | History | — (initial) | CLI-style event stack (3 visible rows with animated spinner) |
 | Claude Stats | DOWN | Session duration, tool calls, files edited, bash count, idle time |
 | OpenCode Stats | DOWN ×2 | Same metrics, isolated from Claude |
 
-The usage screen is Claude-only and shows an empty bar with no percentage
-when quota data is unavailable (API-key users, or before the first API
-response in a session).
+The usage screen shows an empty bar with no percentage when a provider's quota
+data is unavailable. Claude reuses the same private cache as the user's normal
+status line; Codex reads its local app-server rate-limit API.
 
 Press **SELECT/START** on any view to open the app menu. Use **Set id** to
 save the same 0–255 connection ID configured on your desktop daemon, then
@@ -142,12 +145,11 @@ restart the watch app so the new BLE service UUID is registered cleanly.
 | `oh-my-wrist start [-f\|--foreground]` | Start the BLE daemon |
 | `oh-my-wrist stop` | Stop the daemon |
 | `oh-my-wrist status` | Show daemon PID, service status, hook/plugin state |
-| `oh-my-wrist install [--provider claude\|opencode\|both]` | Configure hooks, plugin, and OS service |
+| `oh-my-wrist install [--provider claude\|codex\|opencode\|agents\|both\|all]` | Configure hooks, plugin, and OS service |
 | `oh-my-wrist uninstall [--provider …]` | Remove hooks, plugin, and service |
-| `oh-my-wrist test [message] [--provider claude\|opencode]` | Send a test message to the daemon |
+| `oh-my-wrist test [message] [--provider claude\|codex\|opencode]` | Send a test message to the daemon |
 | `oh-my-wrist config [--show\|--haptic on\|off\|--quiet-start HH:MM\|--quiet-end HH:MM]` | View or update configuration |
 | `oh-my-wrist set-id ID` | Set BLE connection ID (`0`–`255`) and queue an update for a running daemon |
-| `oh-my-wrist opencode install\|uninstall\|status` | Manage the OpenCode plugin |
 | `oh-my-wrist logs [-n LINES]` | Tail the daemon log |
 
 ## Configuration

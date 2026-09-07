@@ -1,17 +1,17 @@
-// OhMyWristUsageView.mc — Claude usage quota screen, CLI / terminal aesthetic.
+// OhMyWristUsageView.mc — weekly Claude + Codex quota screen.
 //
 //   ┌──────────────────────────┐
-//   │    [ claude.usage ]      │  ← chrome-gray header, FONT_XTINY
+//   │    [ weekly.usage ]      │  ← chrome-gray header, FONT_XTINY
 //   ├──────────────────────────┤
-//   │  S [||||||    ]  58%     │  ← 5-hour session quota
-//   │  W [||        ]  18%     │  ← 7-day week quota
+//   │ CLD [||||||    ]  58%    │  ← Claude weekly quota
+//   │ CDX [||        ]  18%    │  ← Codex weekly quota
 //   ├──────────────────────────┤
 //   │   sys.status: ok · …     │  ← chrome-gray footer
 //   └──────────────────────────┘
 //
 // Each bar is 10 vector-drawn cells sized to the row text height; filled =
 // round(pct/10).  When a window's percentage is unknown (-1) the bar is empty
-// and no trailing value is shown.  This screen is Claude-only.
+// and no trailing value is shown.
 
 using Toybox.WatchUi;
 using Toybox.Graphics;
@@ -22,7 +22,7 @@ class OhMyWristUsageView extends WatchUi.View {
 
     function initialize() {
         View.initialize();
-        _title = WatchUi.loadResource(Rez.Strings.UsageHeaderClaude);
+        _title = WatchUi.loadResource(Rez.Strings.UsageHeaderWeekly);
     }
 
     function onLayout(dc) {}
@@ -64,8 +64,8 @@ class OhMyWristUsageView extends WatchUi.View {
 
         // Two bar rows centered on h/2.
         var rows = [
-            ["S", UsageModel.sessionPct],
-            ["W", UsageModel.weekPct],
+            ["CLD", UsageModel.claudePct],
+            ["CDX", UsageModel.codexPct],
         ];
         var rowH = (h * 0.2).toNumber();
         var baseY = (h / 2 - rowH / 2).toNumber();
@@ -112,9 +112,9 @@ class OhMyWristUsageView extends WatchUi.View {
     // One row: label, 10-cell vector bar sized to the text height, trailing
     // percent (omitted when the window has no data).
     function _drawRow(dc, w, y, label, pct) {
-        var labelX = (w * 0.1).toNumber();
-        var barX = (w * 0.22).toNumber();
-        var cellW = (w * 0.05).toNumber();
+        var labelX = (w * 0.08).toNumber();
+        var barX = (w * 0.25).toNumber();
+        var cellW = (w * 0.043).toNumber();
         // Approximate the cap height of uppercase glyphs. getTextDimensions
         // returns the full font cell (ascent+descent) which is taller than the
         // visible glyphs. getFontAscent * 0.72 closely matches the rendered
