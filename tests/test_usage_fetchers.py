@@ -122,6 +122,7 @@ def test_codex_timeout_kills_only_owned_process_group(tmp_path, monkeypatch) -> 
     )
     launcher.chmod(0o755)
     monkeypatch.setattr("ohm.usage_fetchers.shutil.which", lambda _: str(launcher))
+    monkeypatch.setattr("ohm.usage_fetchers._codex_last_good", None)
 
     assert fetch_codex_weekly(timeout=0.25) is None
     child_pid = int(child_pid_file.read_text())
@@ -134,3 +135,23 @@ def test_codex_timeout_kills_only_owned_process_group(tmp_path, monkeypatch) -> 
         time.sleep(0.02)
     else:
         raise AssertionError("app-server child survived owned process-group cleanup")
+
+
+def test_codex_keeps_last_good_value_on_transient_failure(monkeypatch) -> None:
+    from ohm import usage_fetchers as u
+
+    monkeypatch.setattr(u, "_codex_last_good", None)
+    good = u.WeeklyUsage(41, 1_800_000_000)
+    monkeypatch.setattr(u, "_fetch_codex_weekly_live", lambda timeout: good)
+    assert u.fetch_codex_weekly() == good
+
+    monkeypatch.setattr(u, "_fetch_codex_weekly_live", lambda timeout: None)
+    assert u.fetch_codex_weekly() == good
+
+    taken_at = u._codex_last_good[1]
+    monkeypatch.setattr(
+        u.time, "monotonic", lambda: taken_at + u.CODEX_STALE_TOLERANCE_SECONDS + 1
+    )
+    assert u.fetch_codex_weekly() is None
+    assert u._codex_last_good is None
+

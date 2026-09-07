@@ -25,12 +25,21 @@ from typing import Any
 WEEK_MINUTES = 10_080
 CLAUDE_FETCH_INTERVAL_SECONDS = 300
 CLAUDE_STALE_TOLERANCE_SECONDS = 1_800
+CODEX_STALE_TOLERANCE_SECONDS = 1_800
+
 
 
 @dataclass(frozen=True)
 class WeeklyUsage:
     used_percent: int
     resets_at: int | None = None
+
+
+# Last successful Codex reading and when it was taken. A transient app-server
+# failure (timeout, busy machine) should not blank the watch's Codex bar; the
+# weekly window moves slowly enough that a reading up to 30 minutes old is
+# still accurate to within a percent, matching the Claude reader's tolerance.
+_codex_last_good: tuple[WeeklyUsage, float] | None = None
 
 
 def _pct(value: Any) -> int:
@@ -154,6 +163,22 @@ def fetch_claude_weekly(now: float | None = None) -> WeeklyUsage | None:
 
 
 def fetch_codex_weekly(timeout: float = 8.0) -> WeeklyUsage | None:
+    """Read the weekly Codex window, keeping the last good value on failure."""
+    global _codex_last_good
+    live = _fetch_codex_weekly_live(timeout)
+    now = time.monotonic()
+    if live is not None:
+        _codex_last_good = (live, now)
+        return live
+    if _codex_last_good is not None:
+        cached, taken_at = _codex_last_good
+        if now - taken_at <= CODEX_STALE_TOLERANCE_SECONDS:
+            return cached
+        _codex_last_good = None
+    return None
+
+
+def _fetch_codex_weekly_live(timeout: float) -> WeeklyUsage | None:
     """Read the general weekly Codex window through the local app-server."""
     executable = shutil.which("codex")
     if executable is None:
