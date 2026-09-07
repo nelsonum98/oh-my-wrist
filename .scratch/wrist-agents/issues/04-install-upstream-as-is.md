@@ -1,7 +1,7 @@
 # Install upstream oh-my-wrist unchanged and prove the BLE link to the epix
 
 Type: task
-Status: open
+Status: resolved
 Blocked by: none
 
 ## Question
@@ -18,3 +18,7 @@ HITL checklist for Nelson (agent drives the Mac side):
 6. Run one real Claude Code session and note what the watch shows at session end, and whether the existing 5h/7d bars populate.
 
 Answer records: what worked, BLE stability on macOS, anything the security hooks blocked, and whether the upstream launchd service was registered (and its label).
+
+## Answer
+
+Resolved 2026-09-07 by evidence rather than by the checklist. The fork (not upstream as-is) was installed on 2026-09-07 with `uv tool install` (editable, pointing at the repo), registered as launchd `com.nelson.oh-my-wrist`, and the daemon log shows history frames, stats, and alerts pushed to a connected watch through the afternoon, so the BLE link is proven. Backups of `~/.claude/settings.json` and `~/.codex/hooks.json` are under `~/.oh-my-wrist/backups/`. The security hooks and the herdr SessionStart hook survived. statusLine was replaced by the oh-my-wrist relay with `padding` and `refreshInterval` preserved and the previous command chained (`~/.oh-my-wrist/prev_statusline.json`). Caveat: the watch still runs the Connect IQ store build; the fork's watch app (two-provider usage payload) was compiled at `build/garmin/oh-my-wrist-epix2pro51mm.prg` on 2026-09-07 and is not yet sideloaded.
