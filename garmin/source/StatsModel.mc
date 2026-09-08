@@ -42,7 +42,7 @@ class StatsData {
             bashCount = _extractNumber(jsonStr, "\"b\":");
             idleSeconds = _extractNumber(jsonStr, "\"i\":");
 
-            var secs = _extractSignedNumber(jsonStr, "\"s\":");
+            var secs = TextUtil.extractSignedNumber(jsonStr, "\"s\":", null);
             if (secs == null || secs < 0) {
                 lastCompletion = "never";
             } else {
@@ -64,31 +64,10 @@ class StatsData {
 
     // Extract an unsigned numeric value following the given key prefix.
     function _extractNumber(str, key) {
-        var n = _extractSignedNumber(str, key);
+        var n = TextUtil.extractSignedNumber(str, key, null);
         return n == null ? 0 : n;
     }
 
-    // Extract a (possibly negative) numeric value, or null if absent.
-    function _extractSignedNumber(str, key) {
-        var idx = str.find(key);
-        if (idx == null) {
-            return null;
-        }
-        idx += key.length();
-        var end = idx;
-        while (end < str.length()) {
-            var ch = str.substring(end, end + 1);
-            if (ch.equals(",") || ch.equals("}")) {
-                break;
-            }
-            end++;
-        }
-        var token = str.substring(idx, end);
-        if (token == null || token.length() == 0) {
-            return null;
-        }
-        return token.toNumber();
-    }
 }
 
 module StatsModel {

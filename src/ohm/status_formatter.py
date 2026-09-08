@@ -1,17 +1,12 @@
 """
-status_formatter.py — Destructive-command detection for the haptic alert path.
-
-Also re-exports :func:`_utf8_truncate` for backwards-compatible imports; the
-canonical definition lives in :mod:`history_encoder`.
+Destructive-command detection for the haptic alert path.
 """
 
 from __future__ import annotations
 
 import re
 
-from ohm.history_encoder import _utf8_truncate  # re-export
-
-__all__ = ["is_destructive_command", "_utf8_truncate"]
+__all__ = ["is_destructive_command"]
 
 # ---------------------------------------------------------------------------
 # Destructive command detection

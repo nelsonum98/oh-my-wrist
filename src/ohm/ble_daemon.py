@@ -94,6 +94,7 @@ from ohm.session_state import MultiProviderSessionState
 from ohm.usage_fetchers import fetch_claude_weekly, fetch_codex_weekly
 
 _bless_discoverable_patched = False
+_BLE_DIAGNOSTICS_ENABLED = os.environ.get("OHM_BLE_DIAG") == "1"
 
 
 def _patch_bless_le_discoverable() -> None:
@@ -124,8 +125,6 @@ def _patch_bless_le_discoverable() -> None:
             @Discoverable.setter  # type: ignore
             def Discoverable(self, value: "b"):  # type: ignore  # noqa: N802
                 self._discoverable = value
-
-        _orig_start_advertising = BlueZGattApplication.start_advertising
 
         async def _start_advertising_discoverable(self, adapter):  # type: ignore[override]
             await self.set_name(adapter, self.app_name)
@@ -1037,73 +1036,6 @@ class BleDaemon:
                     is_adv,
                 )
 
-    async def _initiate_bonding(self) -> None:
-        """Initiate bonding with the connected central via BlueZ D-Bus.
-
-        Called ~10s after central connects, giving time for GATT discovery
-        and CCCD subscribes to complete. Bonding the link ensures that
-        disconnect events go through the well-tested bonded code path in
-        the Garmin CIQ runtime.
-        """
-        if sys.platform != "linux":
-            return
-
-        try:
-            import subprocess
-
-            # Find the connected device address
-            result = subprocess.run(
-                ["bluetoothctl", "devices", "Connected"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if result.returncode != 0 or not result.stdout.strip():
-                logger.debug("Bonding: no connected devices found")
-                return
-
-            for line in result.stdout.strip().splitlines():
-                parts = line.split()
-                if len(parts) >= 2 and parts[0] == "Device":
-                    addr = parts[1]
-                    # Check if already paired/bonded
-                    info_result = subprocess.run(
-                        ["bluetoothctl", "info", addr],
-                        capture_output=True,
-                        text=True,
-                        timeout=5,
-                    )
-                    if "Paired: yes" in info_result.stdout:
-                        logger.info("Bonding: device {} already paired, skipping", addr)
-                        return
-
-                    # Initiate pairing (bonding)
-                    logger.info("Bonding: initiating pair with {}", addr)
-                    pair_result = subprocess.run(
-                        ["bluetoothctl", "pair", addr],
-                        capture_output=True,
-                        text=True,
-                        timeout=15,
-                    )
-                    if pair_result.returncode == 0:
-                        logger.info("Bonding: pair succeeded with {}", addr)
-                        # Also trust so BlueZ auto-accepts reconnections
-                        subprocess.run(
-                            ["bluetoothctl", "trust", addr],
-                            capture_output=True,
-                            text=True,
-                            timeout=5,
-                        )
-                        logger.info("Bonding: device {} trusted", addr)
-                    else:
-                        logger.warning(
-                            "Bonding: pair failed: {}",
-                            pair_result.stderr or pair_result.stdout,
-                        )
-                    return
-        except Exception as exc:
-            logger.warning("Bonding initiation failed: {}", exc)
-
     async def _log_connection_parameters(self) -> None:
         """Query BlueZ D-Bus for connected device properties (RSSI, pairing
         state, address type, etc.) and log them for debugging.
@@ -1113,7 +1045,7 @@ class BleDaemon:
         Properties of interest: RSSI, Connected, Paired, Trusted,
         AddressType, ServicesResolved, ManufacturerData.
         """
-        if sys.platform != "linux":
+        if not _BLE_DIAGNOSTICS_ENABLED or sys.platform != "linux":
             return
 
         try:
@@ -1141,6 +1073,8 @@ class BleDaemon:
 
     async def _log_device_info(self, address: str) -> None:
         """Log detailed BlueZ device info for a specific address."""
+        if not _BLE_DIAGNOSTICS_ENABLED:
+            return
         import subprocess
 
         try:
@@ -1189,6 +1123,8 @@ class BleDaemon:
           - btmgmt conn-info: RSSI + TX power (BlueZ 5.56+)
           - /sys/kernel/debug/bluetooth/hci0/: connection parameters (needs root)
         """
+        if not _BLE_DIAGNOSTICS_ENABLED:
+            return
         import subprocess
 
         # Active connections with handle
@@ -1268,6 +1204,8 @@ class BleDaemon:
           0x16  Connection Terminated by Local Host
           0x3E  Connection Failed to be Established
         """
+        if not _BLE_DIAGNOSTICS_ENABLED:
+            return
         import subprocess
 
         # Check dmesg for the most recent BLE disconnect event

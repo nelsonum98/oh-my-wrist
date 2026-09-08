@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
@@ -270,25 +269,6 @@ class TestIpcSocketLifecycle:
         uid = os.getuid() if hasattr(os, "getuid") else os.getpid()
         assert SOCKET_PATH.endswith(f"/oh-my-wrist-{uid}/ohm.sock")
         assert SOCKET_PATH != "/tmp/ohm.sock"
-
-    def test_stale_socket_file_removed_on_startup(self):
-        import tempfile
-
-        stale_path = os.path.join(tempfile.gettempdir(), "ohm.sock.test_stale")
-        Path(stale_path).write_bytes(b"stale")
-        try:
-            os.unlink(stale_path)
-            assert not Path(stale_path).exists()
-        finally:
-            Path(stale_path).unlink(missing_ok=True)
-
-    def test_missing_socket_file_unlink_raises(self):
-        import tempfile
-
-        non_existent = os.path.join(tempfile.gettempdir(), "ohm_nonexistent_test.sock")
-        with pytest.raises(FileNotFoundError):
-            os.unlink(non_existent)
-
 
 # ============================================================================
 # IPC message round-trip via Unix socket handler

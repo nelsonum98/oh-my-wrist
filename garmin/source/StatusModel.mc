@@ -249,10 +249,6 @@ module StatusModel {
         return isConnected;
     }
 
-    function getLastUpdateTime() {
-        return lastUpdateTime;
-    }
-
     // ------------------------------------------------------------------
     // Spinner animation
     // ------------------------------------------------------------------
@@ -367,5 +363,17 @@ module StatusModel {
         }
         var delta = Time.now().subtract(lastUpdateTime).value();
         return delta < 30 ? "ok" : "stale";
+    }
+
+    function getFooterText() {
+        var key = getStatusKey();
+        if (key.equals("offline")) {
+            return "sys.status: offline";
+        }
+        var elapsed = getElapsedString();
+        if (elapsed == null) {
+            return "sys.status: " + key;
+        }
+        return "sys.status: " + key + " · " + elapsed;
     }
 }

@@ -40,8 +40,8 @@ module UsageModel {
     // Update state from a compact JSON payload (keys "c", "x"; -1 = absent).
     function parsePayload(jsonStr) {
         try {
-            claudePct = _extractSigned(jsonStr, "\"c\":");
-            codexPct = _extractSigned(jsonStr, "\"x\":");
+            claudePct = TextUtil.extractSignedNumber(jsonStr, "\"c\":", -1);
+            codexPct = TextUtil.extractSignedNumber(jsonStr, "\"x\":", -1);
         } catch (e) {
             // Stale display beats a crash.
         }
@@ -51,32 +51,10 @@ module UsageModel {
     // fallback when the provider characteristic is absent during rollout.
     function parseLegacyPayload(jsonStr) {
         try {
-            claudePct = _extractSigned(jsonStr, "\"w\":");
+            claudePct = TextUtil.extractSignedNumber(jsonStr, "\"w\":", -1);
         } catch (e) {
             // Stale display beats a crash.
         }
     }
 
-    // Extract a (possibly negative) integer following the key prefix, or -1.
-    function _extractSigned(str, key) {
-        var idx = str.find(key);
-        if (idx == null) {
-            return -1;
-        }
-        idx += key.length();
-        var end = idx;
-        while (end < str.length()) {
-            var ch = str.substring(end, end + 1);
-            if (ch.equals(",") || ch.equals("}")) {
-                break;
-            }
-            end++;
-        }
-        var token = str.substring(idx, end);
-        if (token == null || token.length() == 0) {
-            return -1;
-        }
-        var n = token.toNumber();
-        return n == null ? -1 : n;
-    }
 }

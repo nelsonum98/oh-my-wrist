@@ -491,11 +491,6 @@ def find_opencode_project_root(start: Path | None = None) -> Path | None:
         current = parent
 
 
-def is_opencode_project(start: Path | None = None) -> bool:
-    """Return True if the current directory is inside an OpenCode project."""
-    return find_opencode_project_root(start) is not None
-
-
 def is_opencode_installed() -> bool:
     """Return True if OpenCode appears to be installed on this system."""
     # Check for the global config directory or the opencode binary
@@ -513,90 +508,12 @@ def is_opencode_installed() -> bool:
 
 
 def _get_plugin_source() -> str:
-    """Return the TypeScript plugin source text.
-
-    Tries the bundled file first; falls back to an embedded minimal stub
-    so that installation never fails even if the package is partially
-    installed.
-    """
-    if _PLUGIN_SOURCE_PATH.exists():
-        return _PLUGIN_SOURCE_PATH.read_text(encoding="utf-8")
-
-    # Fallback: inline minimal plugin stub
-    return _OPENCODE_PLUGIN_STUB
-
-
-_OPENCODE_PLUGIN_STUB = """\
-// oh_my_wrist_opencode.ts — auto-generated stub
-// Full source is in opencode/plugins/ of the oh-my-wrist package.
-import * as net from "net";
-import * as os from "os";
-import * as path from "path";
-
-function unixSocketPath(): string {
-  const uid = typeof process.getuid === "function"
-    ? process.getuid()
-    : os.userInfo().uid;
-  return path.join("/tmp", `oh-my-wrist-${uid}`, "ohm.sock");
-}
-
-const SOCKET_PATH = process.platform === "win32"
-  ? String.raw`\\\\.\\pipe\\ohm`
-  : unixSocketPath();
-
-async function sendToDaemon(payload: object): Promise<void> {
-  const json = JSON.stringify(payload) + "\\n";
-  return new Promise<void>((resolve) => {
-    try {
-      const sock = net.createConnection(SOCKET_PATH);
-      sock.on("connect", () => { sock.write(json, "utf8", () => { sock.end(); resolve(); }); });
-      sock.on("error", () => resolve());
-      sock.setTimeout(500, () => { sock.destroy(); resolve(); });
-    } catch { resolve(); }
-  });
-}
-
-const OhMyWristPlugin = async (_ctx: unknown) => {
-  return {
-    "tool.execute.before": async (input: any, output: any) => {
-      await sendToDaemon({
-        provider: "opencode", provider_event: "tool.execute.before",
-        canonical_event: "tool_start", session_id: input?.sessionID ?? null,
-        tool_name: input?.tool ?? null, label: null, path: null,
-        status_text: null, active: true, alert_type: 0,
-        ts: Date.now() / 1000, meta: {},
-      });
-    },
-    "tool.execute.after": async (input: any, output: any) => {
-      await sendToDaemon({
-        provider: "opencode", provider_event: "tool.execute.after",
-        canonical_event: "tool_end", session_id: input?.sessionID ?? null,
-        tool_name: input?.tool ?? null, label: null, path: null,
-        status_text: null, active: false, alert_type: 0,
-        ts: Date.now() / 1000, meta: {},
-      });
-    },
-    event: async ({ event }: { event: any }) => {
-      if (!event?.type) return;
-      const type = event.type;
-      if (type === "session.created" || type === "session.idle" || type === "session.error") {
-        const ce = type === "session.created" ? "session_start"
-          : type === "session.idle" ? "session_idle" : "session_error";
-        await sendToDaemon({
-          provider: "opencode", provider_event: type,
-          canonical_event: ce, session_id: event.sessionId ?? null,
-          tool_name: null, label: null, path: null,
-          status_text: null, active: type === "session.created",
-          alert_type: type === "session.idle" ? 0x01 : type === "session.error" ? 0x02 : 0,
-          ts: Date.now() / 1000, meta: {},
-        });
-      }
-    },
-  };
-};
-
-export default OhMyWristPlugin;
-"""
+    """Return the bundled TypeScript plugin source text."""
+    if not _PLUGIN_SOURCE_PATH.is_file():
+        raise FileNotFoundError(
+            f"Bundled OpenCode plugin missing: {_PLUGIN_SOURCE_PATH}"
+        )
+    return _PLUGIN_SOURCE_PATH.read_text(encoding="utf-8")
 
 
 def install_opencode_plugin(project_root: Path | None = None) -> bool:
@@ -633,68 +550,6 @@ def install_opencode_plugin(project_root: Path | None = None) -> bool:
     _atomic_write_text(dest, source)
     logger.info("OpenCode plugin installed globally at {}", dest)
     return True
-
-
-def _normalise_plugin_array(config: dict) -> list[str]:
-    """Return a writable `plugin` array, migrating legacy shapes when needed."""
-    raw_plugins = config.get("plugin")
-
-    if isinstance(raw_plugins, list):
-        plugins = [p for p in raw_plugins if isinstance(p, str) and p]
-        if len(plugins) != len(raw_plugins):
-            logger.warning(
-                "Ignoring non-string entries in opencode.json 'plugin' array"
-            )
-        # De-duplicate while preserving order
-        config["plugin"] = list(dict.fromkeys(plugins))
-        return config["plugin"]
-
-    migrated: list[str] = []
-    legacy_plugins = config.get("plugins")
-    if isinstance(legacy_plugins, list):
-        for entry in legacy_plugins:
-            if isinstance(entry, str) and entry:
-                migrated.append(entry)
-                continue
-            if isinstance(entry, dict):
-                path_val = entry.get("path")
-                if isinstance(path_val, str) and path_val:
-                    migrated.append(path_val)
-        if migrated:
-            logger.info(
-                "Migrated {} plugin path(s) from legacy 'plugins' key",
-                len(migrated),
-            )
-
-    config["plugin"] = list(dict.fromkeys(migrated))
-    return config["plugin"]
-
-
-def _patch_opencode_json(project_root: Path) -> None:
-    """Add the oh-my-wrist plugin entry to .opencode/opencode.json."""
-    config_path = project_root / ".opencode" / "opencode.json"
-
-    if config_path.exists():
-        try:
-            config = json.loads(config_path.read_text(encoding="utf-8"))
-            if not isinstance(config, dict):
-                logger.warning("opencode.json root is not an object — creating fresh")
-                config = {}
-        except json.JSONDecodeError:
-            logger.warning("opencode.json is not valid JSON — creating fresh")
-            config = {}
-    else:
-        config = {}
-
-    plugins = _normalise_plugin_array(config)
-
-    if _OPENCODE_PLUGIN_ENTRY in plugins:
-        logger.info("OpenCode plugin already registered in opencode.json")
-        return
-
-    plugins.append(_OPENCODE_PLUGIN_ENTRY)
-    _atomic_write_json(config_path, config)
-    logger.info("OpenCode plugin registered in {}", config_path)
 
 
 def remove_opencode_plugin(project_root: Path | None = None) -> bool:
@@ -741,51 +596,6 @@ def remove_opencode_plugin(project_root: Path | None = None) -> bool:
                 pass
 
     return removed
-
-
-# ---------------------------------------------------------------------------
-# Combined install / uninstall
-# ---------------------------------------------------------------------------
-
-
-def install_all(provider: str = "all", project_root: Path | None = None) -> None:
-    """Install hooks/plugins for the specified provider(s).
-
-    Parameters
-    ----------
-    provider:
-        ``"claude"`` — Claude Code only.
-        ``"opencode"`` — OpenCode only.
-        ``"both"`` (default) — both providers.
-    """
-    if provider in ("claude", "both", "all"):
-        patch_claude_settings()
-        patch_claude_statusline()
-
-    if provider in ("codex", "all"):
-        patch_codex_hooks()
-
-    if provider in ("opencode", "both", "all"):
-        install_opencode_plugin(project_root)
-
-    install_service()
-    logger.info("Installation complete (provider={})", provider)
-
-
-def uninstall_all(provider: str = "all", project_root: Path | None = None) -> None:
-    """Remove hooks/plugins for the specified provider(s)."""
-    if provider in ("claude", "both", "all"):
-        remove_claude_hooks()
-        remove_claude_statusline()
-
-    if provider in ("codex", "all"):
-        remove_codex_hooks()
-
-    if provider in ("opencode", "both", "all"):
-        remove_opencode_plugin(project_root)
-
-    uninstall_service()
-    logger.info("Uninstallation complete (provider={})", provider)
 
 
 # ---------------------------------------------------------------------------

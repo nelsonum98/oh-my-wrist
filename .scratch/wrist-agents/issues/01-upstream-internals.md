@@ -11,7 +11,7 @@ How does upstream oh-my-wrist work end to end, and what exactly must change to a
 Read the fork at `~/dev/oh-my-wrist` and produce an architecture note covering:
 
 1. Event model: `src/ohm/provider_types.py` (`CanonicalEvent`), `src/ohm/protocol.py` (IPC wire format, BLE GATT UUIDs, characteristics), `src/ohm/ble_daemon.py` (what is sent over BLE, how often, size limits), `src/ohm/history_encoder.py`.
-2. Providers: `src/ohm/adapters/claude_adapter.py`, `opencode_adapter.py`, `hook_relay.py`, `opencode/plugins/oh_my_wrist_opencode.ts`. What a new provider needs to implement. Whether the watch app has provider-specific code (`garmin/source/StatsModel.mc`, `IconCatalog.mc`, `Palette.mc`).
+2. Providers: `src/ohm/adapters/claude_adapter.py`, `hook_relay.py`, and `opencode/plugins/oh_my_wrist_opencode.ts`. What a new provider needs to implement. Whether the watch app has provider-specific code (`garmin/source/StatsModel.mc`, `IconCatalog.mc`, `Palette.mc`).
 3. Usage path: `src/ohm/statusline_relay.py` to `garmin/source/UsageModel.mc` and `OhMyWristUsageView.mc`. Where the 5h/7d numbers originate, whether usage only updates while a Claude session is running, and what the wire payload looks like.
 4. Haptics: which events vibrate, patterns, and how "session done" / "agent completion" are detected.
 5. Install: `src/ohm/install.py` and `src/ohm/platform/macos.py`. Exactly what it writes to `~/.claude/settings.json` (hooks, statusLine chaining) and the launchd plist it registers. Flag anything that would collide with the existing hooks in that file.
@@ -22,7 +22,7 @@ Deliver `docs/research/upstream-internals.md` with the note plus a "what to touc
 
 ## Answer
 
-Resolved 2026-09-03. Full note: [docs/research/upstream-internals.md](../../../docs/research/upstream-internals.md).
+Resolved 2026-09-03. Historical note: [docs/archive/upstream-internals.md](../../../docs/archive/upstream-internals.md).
 
 - Providers are hardcoded two-way everywhere: `Provider` literal, one BLE characteristic per provider, `if/else` routing in `BleManager.mc`, two `StatsData` instances, a fixed four-view swipe stack. Codex needs a third slot on both sides.
 - Usage is session-gated by construction: `statusline_relay.py` is the only source and runs only while Claude Code renders its statusLine. The daemon's push side already re-notifies cached values every 5-10 s, so only the fetch must become session-independent. Payload `{"s","w"}` is Claude-only and Codex usage is dropped in `ble_daemon.py`.

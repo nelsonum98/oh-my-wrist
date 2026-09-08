@@ -10,6 +10,28 @@ using Toybox.Math;
 using Toybox.System;
 
 module TextUtil {
+    function extractSignedNumber(str, key, fallback) {
+        var idx = str.find(key);
+        if (idx == null) {
+            return fallback;
+        }
+        idx += key.length();
+        var end = idx;
+        while (end < str.length()) {
+            var ch = str.substring(end, end + 1);
+            if (ch.equals(",") || ch.equals("}")) {
+                break;
+            }
+            end++;
+        }
+        var token = str.substring(idx, end);
+        if (token == null || token.length() == 0) {
+            return fallback;
+        }
+        var n = token.toNumber();
+        return n == null ? fallback : n;
+    }
+
     // ─── Round-screen geometry ─────────────────────────────────────────
     //
     // On a round display the usable horizontal width at any Y position is
@@ -94,44 +116,7 @@ module TextUtil {
         return limitY; // unreachable, but satisfies compiler
     }
 
-    // Ellipsis glyph reused by middleTruncate.  Single character so it
-    // costs one position out of maxChars.
     const ELLIPSIS = "…";
-
-    // Truncate `str` to at most `maxChars` characters by removing the
-    // middle and inserting an ellipsis, preserving the prefix and suffix.
-    //
-    //   middleTruncate("OhMyWristView.mc", 13) → "ClaudeG…ew.mc"
-    //
-    // The suffix is preserved for filenames (extension stays visible).
-    // Returns `str` unchanged when short enough.
-    function middleTruncate(str, maxChars) {
-        if (str == null) {
-            return "";
-        }
-        var s = str as Lang.String;
-        var n = s.length();
-        if (maxChars <= 0) {
-            return "";
-        }
-        if (n <= maxChars) {
-            return s;
-        }
-        if (maxChars <= 1) {
-            return ELLIPSIS;
-        }
-
-        var keep = maxChars - 1; // one slot for the ellipsis
-        var head = (keep + 1) / 2; // bias prefix to be at least as long as suffix
-        var tail = keep - head;
-        if (tail < 0) {
-            tail = 0;
-        }
-
-        var prefix = s.substring(0, head);
-        var suffix = tail > 0 ? s.substring(n - tail, n) : "";
-        return prefix + ELLIPSIS + suffix;
-    }
 
     // Pixel-measured middle-truncate.  Returns the longest middle-
     // truncated form of `str` whose rendered width in `font` fits within

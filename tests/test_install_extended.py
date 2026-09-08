@@ -1,14 +1,7 @@
 """
 test_install_extended.py — Tests for the OpenCode-related parts of install.py.
 
-Covers:
-- find_opencode_project_root() — detection up the directory tree
-- is_opencode_project()
-- install_opencode_plugin() — creates plugin file and patches opencode.json
-- remove_opencode_plugin() — removes plugin file and entry from opencode.json
-- _patch_opencode_json() — idempotent, handles corrupt JSON
-- install_all() / uninstall_all() with provider= argument
-- Atomic write helpers
+Covers project discovery, plugin installation/removal, and atomic write helpers.
 """
 
 from __future__ import annotations
@@ -22,12 +15,11 @@ import pytest
 from ohm.install import (
     OPENCODE_PLUGIN_FILENAME,
     _OPENCODE_PLUGIN_ENTRY,
-    _OPENCODE_PLUGIN_STUB,
     _atomic_write_json,
     _atomic_write_text,
+    _get_plugin_source,
     find_opencode_project_root,
     install_opencode_plugin,
-    is_opencode_project,
     remove_opencode_plugin,
 )
 
@@ -110,26 +102,6 @@ class TestFindOpencodeProjectRoot:
 
 
 # ---------------------------------------------------------------------------
-# is_opencode_project()
-# ---------------------------------------------------------------------------
-
-
-class TestIsOpencodeProject:
-    def test_true_when_opencode_dir_exists(self, tmp_project):
-        assert is_opencode_project(tmp_project) is True
-
-    def test_true_from_subdirectory(self, nested_project):
-        root, subdir = nested_project
-        assert is_opencode_project(subdir) is True
-
-    def test_true_for_legacy_layout(self, legacy_layout_project):
-        assert is_opencode_project(legacy_layout_project) is True
-
-    def test_false_when_no_opencode_dir(self, tmp_path):
-        assert is_opencode_project(tmp_path) is False
-
-
-# ---------------------------------------------------------------------------
 # install_opencode_plugin()
 # ---------------------------------------------------------------------------
 
@@ -170,14 +142,12 @@ class TestInstallOpencodePlugin:
         assert "/tmp/ohm.sock" not in content
         assert "os.tmpdir" not in content
 
-    def test_fallback_stub_uses_private_unix_socket_path(self):
-        assert "oh-my-wrist" in _OPENCODE_PLUGIN_STUB
-        assert "ohm.sock" in _OPENCODE_PLUGIN_STUB
-        assert "/tmp/ohm.sock" not in _OPENCODE_PLUGIN_STUB
-        assert "os.tmpdir" not in _OPENCODE_PLUGIN_STUB
-        assert r"String.raw`\\.\pipe\ohm`" in _OPENCODE_PLUGIN_STUB
-        assert "export default OhMyWristPlugin" in _OPENCODE_PLUGIN_STUB
-        assert "export const OhMyWristPlugin" not in _OPENCODE_PLUGIN_STUB
+    def test_missing_bundled_plugin_fails_clearly(self, tmp_path, monkeypatch):
+        missing = tmp_path / "missing" / OPENCODE_PLUGIN_FILENAME
+        monkeypatch.setattr("ohm.install._PLUGIN_SOURCE_PATH", missing)
+
+        with pytest.raises(FileNotFoundError, match=str(missing)):
+            _get_plugin_source()
 
     def test_idempotent_install(self, tmp_project):
         install_opencode_plugin(tmp_project)

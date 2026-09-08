@@ -15,7 +15,6 @@ using Toybox.Graphics;
 using Toybox.Lang;
 
 module IconCatalog {
-    const ICON_NONE = 0x00;
     const ICON_PLAY = 0x01;
     const ICON_PENCIL = 0x02;
     const ICON_EYE = 0x03;
@@ -30,7 +29,6 @@ module IconCatalog {
     const ICON_QUESTION = 0x0c;
     const ICON_NO_ENTRY = 0x0d;
     const ICON_STATUS_DOT = 0x0e;
-    const MAX_KNOWN_ICON_ID = 0x0e;
 
     // Short tool/intent name shown in column 2 of the history view.
     // Mirrors the intent classification in history_encoder._classify.

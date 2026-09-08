@@ -4,8 +4,7 @@ test_provider_types.py — Tests for provider_types.py.
 Covers:
 - TOOL_INTENT mapping completeness and correctness
 - get_tool_intent() for known, unknown, empty, and None inputs
-- CanonicalEvent construction, defaults, and computed properties
-- is_session_boundary and is_terminal predicates
+- CanonicalEvent construction and defaults
 - tool_intent property delegation
 """
 
@@ -217,39 +216,6 @@ class TestCanonicalEventProperties:
             tool_name=tool,
         )
         assert ev.tool_intent == expected_intent
-
-    @pytest.mark.parametrize(
-        "canonical_event,expected",
-        [
-            ("session_start", True),
-            ("session_stop", True),
-            ("session_error", True),
-            ("tool_start", False),
-            ("tool_end", False),
-            ("session_idle", False),
-            ("file_edit", False),
-            ("unknown", False),
-        ],
-    )
-    def test_is_session_boundary(self, canonical_event, expected):
-        ev = CanonicalEvent(provider="claude", canonical_event=canonical_event)
-        assert ev.is_session_boundary == expected
-
-    @pytest.mark.parametrize(
-        "canonical_event,expected",
-        [
-            ("session_stop", True),
-            ("session_error", True),
-            ("session_start", False),
-            ("session_idle", False),
-            ("tool_start", False),
-            ("tool_end", False),
-            ("unknown", False),
-        ],
-    )
-    def test_is_terminal(self, canonical_event, expected):
-        ev = CanonicalEvent(provider="claude", canonical_event=canonical_event)
-        assert ev.is_terminal == expected
 
     def test_active_false_for_session_stop(self):
         # active is set by the adapter, not auto-derived, but verify the field

@@ -141,18 +141,6 @@ else:
 # Legacy message schema (IPC wire format — Claude Code hook_relay)
 # ---------------------------------------------------------------------------
 
-EventType = Literal[
-    "PreToolUse",
-    "PostToolUse",
-    "Notification",
-    "Stop",
-    "SessionStart",
-    "SessionEnd",
-    "SubagentStop",
-    "Unknown",
-]
-
-
 class HookEvent(BaseModel):
     """Raw hook event received on stdin from Claude Code.
 
@@ -187,9 +175,6 @@ class IpcMessage(BaseModel):
     alert_type: int = Field(default=0)
     ts: float = Field(default_factory=time.time)
 
-
-# Alias kept for clarity in new code — same model, richer name
-HookMessage = IpcMessage
 
 # ---------------------------------------------------------------------------
 # Canonical IPC message (multi-provider wire format)

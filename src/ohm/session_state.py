@@ -1,8 +1,8 @@
 """
 session_state.py — Provider-agnostic session state and statistics engine.
 
-This module replaces the Claude-specific ``session_tracker.py`` with a
-unified engine that accepts :class:`CanonicalEvent` objects from any provider.
+This module replaces the earlier Claude-specific tracker with a unified engine
+that accepts :class:`CanonicalEvent` objects from any provider.
 
 It tracks:
 - Whether a session is currently active.

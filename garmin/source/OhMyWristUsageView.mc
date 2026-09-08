@@ -75,7 +75,7 @@ class OhMyWristUsageView extends WatchUi.View {
         }
 
         // Footer — reuse the history view's sys.status line.
-        var footerText = _buildFooter();
+        var footerText = StatusModel.getFooterText();
         var footerTextW = dc.getTextWidthInPixels(footerText, chromeFont);
         var footerY = TextUtil.findFitY(
             (h * 0.9).toNumber(),
@@ -162,15 +162,4 @@ class OhMyWristUsageView extends WatchUi.View {
         }
     }
 
-    function _buildFooter() {
-        var key = StatusModel.getStatusKey();
-        if (key.equals("offline")) {
-            return "sys.status: offline";
-        }
-        var elapsed = StatusModel.getElapsedString();
-        if (elapsed == null) {
-            return "sys.status: " + key;
-        }
-        return "sys.status: " + key + " · " + elapsed;
-    }
 }

@@ -428,11 +428,8 @@ def test(message: str, provider: str) -> None:
         meta={"status": message},
     )
 
-    async def _send() -> None:
-        await send_to_daemon(msg)
-
     try:
-        asyncio.run(_send())
+        asyncio.run(send_to_daemon(msg))
         click.echo(f"Sent test status [{provider}]: '{message}'")
     except Exception as exc:
         click.echo(
@@ -537,11 +534,8 @@ def set_id(connection_id: int) -> None:
         meta={"connection_id": cfg.connection_id, "control_token": control_token},
     )
 
-    async def _send() -> None:
-        await send_to_daemon(msg)
-
     try:
-        asyncio.run(_send())
+        asyncio.run(send_to_daemon(msg))
         click.echo("Running daemon update queued.")
     except Exception as exc:
         click.echo(

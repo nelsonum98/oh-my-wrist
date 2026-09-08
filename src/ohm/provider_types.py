@@ -165,18 +165,4 @@ class CanonicalEvent(BaseModel):
         """Return the normalised tool intent group for this event."""
         return get_tool_intent(self.tool_name or "")
 
-    @property
-    def is_session_boundary(self) -> bool:
-        """True for events that mark the start or end of a session."""
-        return self.canonical_event in (
-            "session_start",
-            "session_stop",
-            "session_error",
-        )
-
-    @property
-    def is_terminal(self) -> bool:
-        """True for events that mark the definitive end of a session."""
-        return self.canonical_event in ("session_stop", "session_error")
-
     model_config = {"populate_by_name": True}

@@ -264,10 +264,6 @@ class TestEncoderSimulation:
             decoded = decode_frame(encode_event(canonical))
             assert decoded["icon"] == int(IconId.CHECK)
 
-    def test_session_has_29_steps(self):
-        assert len(SESSION) == 29
-
-
 # ============================================================================
 # Daemon simulation: replay through _push_event
 # ============================================================================
@@ -395,10 +391,3 @@ class TestIpcMessages:
             raw = encode_message(msg)
             assert raw.endswith(b"\n")
             raw.decode("utf-8")
-
-    def test_ipc_message_ts_monotonic(self):
-        ts_seq = []
-        for step in SESSION:
-            ts_seq.append(time.time())
-            time.sleep(0.001)
-        assert all(ts_seq[i] >= ts_seq[i - 1] for i in range(1, len(ts_seq)))

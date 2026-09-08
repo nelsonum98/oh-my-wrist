@@ -107,6 +107,8 @@ daemon-to-watch link without starting a real Claude Code or OpenCode session:
 python tools/check_connection.py
 ```
 
+On Linux, the daemon's verbose BlueZ diagnostics (connection parameters, device info, dmesg disconnect reasons) are off by default; set `OHM_BLE_DIAG=1` in the daemon's environment to enable them.
+
 Keep the daemon running and the watch app open. You should see history rows
 change, Claude/OpenCode stats increment, and Claude usage bars move. Useful
 options:

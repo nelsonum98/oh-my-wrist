@@ -104,7 +104,7 @@ class OhMyWristView extends WatchUi.View {
 
         // Footer — combined status + elapsed string, chrome gray.
         // Adaptive Y: start at 90%, step inward up to 80% if text clips.
-        var footerText = _buildFooter();
+        var footerText = StatusModel.getFooterText();
         var footerTextW = dc.getTextWidthInPixels(footerText, chromeFont);
         var footerY = TextUtil.findFitY(
             (h * 0.9).toNumber(), // preferred Y
@@ -328,16 +328,4 @@ class OhMyWristView extends WatchUi.View {
         return label;
     }
 
-    // "sys.status: ok · 35s ago" / "sys.status: stale · 2m ago" / "sys.status: offline"
-    function _buildFooter() {
-        var key = StatusModel.getStatusKey();
-        if (key.equals("offline")) {
-            return "sys.status: offline";
-        }
-        var elapsed = StatusModel.getElapsedString();
-        if (elapsed == null) {
-            return "sys.status: " + key;
-        }
-        return "sys.status: " + key + " · " + elapsed;
-    }
 }

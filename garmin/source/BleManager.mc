@@ -385,13 +385,6 @@ class OhMyWristBleDelegate extends BLE.BleDelegate {
         _watchdogTimer.start(method(:_onWatchdogTick), WATCHDOG_TICK_MS, true);
     }
 
-    function _stopWatchdog() {
-        if (_watchdogTimer != null) {
-            _watchdogTimer.stop();
-            _watchdogTimer = null;
-        }
-    }
-
     // Periodic check that the current phase hasn't exceeded its budget.
     // Each branch implements the recovery for one phase — see the
     // per-phase budgets table in DESIGN.md and the file header comment.
@@ -489,19 +482,8 @@ class OhMyWristBleDelegate extends BLE.BleDelegate {
         _pendingScanResult = null;
     }
 
-    // Tear down whatever connection state we have and return to scanning.
-    // Used by the watchdog on connect/discover/subscribe timeouts.
-    //
-    // CRITICAL: do NOT call BLE.unpairDevice and BLE.setScanState back to
-    // back — this reliably causes workarea errors. Instead:
-    //   • Connected: call unpairDevice and let the natural _onDisconnected
-    //     callback schedule the reconnect timer (gated by _aborting).
-    //   • Not connected (PHASE_CONNECTING with no device yet): clear state,
-    //     transition to SCANNING, and rearm the scan via a short timer.
-    //
-    // Re-entrancy guard: _aborting prevents the watchdog from calling this
-    // method again while a previous abort is still in-flight (timer pending
-    // or waiting for a DISCONNECTED callback from unpairDevice).
+    // Never call unpairDevice and setScanState back-to-back: Garmin's BLE
+    // workarea can fail. The disconnect callback or a timer owns the rescan.
     function _abortToScanning() {
         _abortToScanningExtended(false);
     }
@@ -543,29 +525,12 @@ class OhMyWristBleDelegate extends BLE.BleDelegate {
         _retriedCccds = {};
 
         if (_connectedDevice != null) {
-            // When still in PHASE_CONNECTING (the CONNECTED callback never
-            // arrived), the Device object is in a "connecting" limbo.
-            // Calling unpairDevice() synchronously from a timer callback while
-            // the BLE stack is still processing the pending connection can
-            // crash the native layer.
-            //
-            // Fix: defer the unpairDevice() call by BLE_OP_SPACING_MS to let
-            // the stack settle, then proceed as normal. If the CONNECTED
-            // callback arrives in the meantime (late accept — Case 3 in
-            // onConnectedStateChanged), it will take priority and we cancel
-            // the deferred unpair.
             if (wasPhase == PHASE_CONNECTING) {
                 System.println(
                     "BLE: _abortToScanning (never got CONNECTED callback)"
                 );
-                // The OS BLE stack still holds a pending connection. If we
-                // don't free it, the OS filters out advertisements from that
-                // device, making it invisible to scans — permanently stuck.
-                //
-                // Defer unpairDevice() by BLE_OP_SPACING_MS so the BLE stack
-                // can settle. If the CONNECTED callback arrives in the
-                // meantime (late accept), Case 3 in onConnectedStateChanged
-                // cancels the deferred unpair and accepts the connection.
+                // A pending connection hides the device from later scans, but
+                // synchronous unpair here can crash the native BLE layer.
                 _deferredUnpairDevice = _connectedDevice;
                 _connectedDevice = null;
                 _discoveryDevice = null;
@@ -729,18 +694,8 @@ class OhMyWristBleDelegate extends BLE.BleDelegate {
         _scheduleRescan();
     }
 
-    // Deferred unpair + rescan for the PHASE_CONNECTING timeout path.
-    //
-    // When pairDevice() was called but the CONNECTED callback never arrived,
-    // the OS BLE stack still holds a pending connection. Without calling
-    // unpairDevice(), the OS filters out advertisements from that device
-    // address, making it invisible to subsequent scans — permanently stuck.
-    //
-    // We attempt unpairDevice() inside try/catch after a BLE_OP_SPACING_MS
-    // delay. If it throws a catchable exception, the OS supervision timeout
-    // remains as fallback. If a late CONNECTED callback arrives before this
-    // fires, Case 3 in onConnectedStateChanged cancels _opTimer and nulls
-    // _deferredUnpairDevice, so we never unpair a live connection.
+    // The deferred unpair frees a pending slot after the BLE stack settles.
+    // A late CONNECTED callback cancels it so a live connection is preserved.
     function _onDeferredUnpairAndRescan() as Void {
         if (_deferredUnpairDevice != null) {
             var dev = _deferredUnpairDevice;
@@ -782,26 +737,8 @@ class OhMyWristBleDelegate extends BLE.BleDelegate {
         _opTimer.start(method(:restartScan), BLE_OP_SPACING_MS, false);
     }
 
-    // ------------------------------------------------------------------
-    // Scanning — two-phase collect-then-pair
-    // ------------------------------------------------------------------
-
-    // Phase 1: collect matching advertisements for SCAN_COLLECT_MS so
-    // we can pick the strongest signal instead of latching onto the
-    // first (potentially stale/weak) advert.
-    //
-    // Phase 2 (_onScanCollectDone): once the window closes, select the
-    // best candidate and pair using the canonical SDK pattern:
-    //     setScanState(SCAN_STATE_OFF);
-    //     pairDevice(scanResult);
-    //
-    // Stopping the scan before pairing avoids a workarea race that produced
-    // intermittent 1-in-N success rates. Calling pairDevice() while the
-    // radio is still in SCAN_STATE_SCANNING is the documented anti-pattern.
-    //
-    // RSSI guard: the SDK sample only pairs above -50 dBm; -85 dBm is a
-    // looser cutoff that still excludes very weak adverts where pairing
-    // would take long enough to widen the crash window.
+    // Stop scanning before pairDevice: pairing while scanning triggers an
+    // intermittent Garmin workarea race. Collect first to choose by RSSI.
     function onScanResults(scanResults) as Void {
         // Only act on scan results when we're actively looking for a device.
         if (_phase != PHASE_SCANNING) {
@@ -1337,21 +1274,9 @@ class OhMyWristBleDelegate extends BLE.BleDelegate {
                 ")"
         );
 
-        // ============================================================
-        // CRITICAL: Do as LITTLE as possible inside this callback.
-        // Any of the following inside onConnectedStateChanged can
-        // corrupt the BLE workarea and crash the native stack:
-        //   - WatchUi.requestUpdate()
-        //   - new Timer.Timer() (or any allocation that triggers GC)
-        //   - StatusModel / method calls with side effects
-        //   - BLE.setScanState()
-        //
-        // We ONLY null native BLE object references (safe pointer-null)
-        // and restart the pre-allocated _opTimer. All heavy work
-        // happens in _onDisconnectDeferred() ~200ms later.
-        // ============================================================
+        // Allocations, UI calls, and scan changes in this callback can corrupt
+        // Garmin's BLE workarea. Only clear references and reuse _opTimer here.
 
-        // Null native BLE object references to prevent stale access.
         _service = null;
         _charHistory = null;
         _charAlert = null;
@@ -1364,13 +1289,9 @@ class OhMyWristBleDelegate extends BLE.BleDelegate {
         _currentSubscribingUuid = null;
         _currentSubscribeStartTime = null;
 
-        // Capture the aborting flag; the deferred handler needs it.
         _disconnectWasAborting = _aborting;
         _aborting = false;
 
-        // Defer ALL heavy work (phase change, UI update, timer scheduling).
-        // _opTimer is pre-allocated; reuse it for the defer to avoid
-        // exhausting the device timer pool.
         _opTimer.stop();
         _opTimer.start(method(:_onDisconnectDeferred), 200, false);
     }
@@ -1414,13 +1335,8 @@ class OhMyWristBleDelegate extends BLE.BleDelegate {
         _opTimer.start(method(:restartScan), 5000, false);
     }
 
-    // NOTE: BleDelegate is not officially documented to receive an onStart
-    // callback, but on at least some Connect IQ versions/devices it is
-    // invoked alongside AppBase.onStart. Removing it caused regressions
-    // (connection attempts timing out, IQ runtime crash), so it is kept
-    // here as a defensive belt-and-braces hook. The app's primary BLE
-    // init lives in OhMyWristApp.onStart — this is redundant on
-    // firmwares where the callback never fires.
+    // Some CIQ firmware calls this undocumented delegate hook. Keep it because
+    // removing it caused connection timeouts and native runtime crashes.
     function onStart(state) {
         // Guard: only run boot sequence during initial scanning phase.
         // On some CIQ runtimes this callback fires late or re-fires,
@@ -1436,8 +1352,6 @@ class OhMyWristBleDelegate extends BLE.BleDelegate {
 
         registerBleProfile();
 
-        // Reuse the pre-allocated _opTimer for the boot-scan delay.
-        // No new Timer.Timer() allocation needed.
         _opTimer.stop();
         _opTimer.start(method(:initializeScan), 2000, false);
     }
@@ -1515,24 +1429,9 @@ class OhMyWristBleDelegate extends BLE.BleDelegate {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Characteristic notifications
-    // ------------------------------------------------------------------
-
-    // Routes incoming GATT notifications to the appropriate model.
-    //
-    // CRITICAL: Do NOT call characteristic.getUuid() or any other method on
-    // the characteristic object. After a BLE link-loss, the CIQ runtime may
-    // deliver one final queued notification where the native backing of the
-    // characteristic is already freed. Calling getUuid() on it crashes the
-    // native layer and is NOT catchable by Monkey C try/catch.
-    //
-    // Instead, we dispatch by comparing the characteristic REFERENCE against
-    // cached references obtained during subscribe phase. Reference comparison
-    // (==) is a pure Monkey C operation that never touches native memory.
+    // A queued post-disconnect notification may have freed native backing.
+    // Dispatch by cached reference: getUuid() can cause an uncatchable crash.
     function onCharacteristicChanged(characteristic, value) {
-        // If all cached refs are null, we've already processed a disconnect.
-        // The notification is stale — drop it silently.
         if (_charStatsClaude == null) {
             return;
         }
@@ -1662,24 +1561,13 @@ class OhMyWristBleDelegate extends BLE.BleDelegate {
         Attention.vibrate(pattern);
     }
 
-    // ------------------------------------------------------------------
-    // Descriptor write confirmation
-    // ------------------------------------------------------------------
-
     function onDescriptorWrite(descriptor, status) {
         var uuid = _currentSubscribingUuid;
         _currentSubscribingUuid = null;
 
-        // Log every CCCD write outcome so simulator-console diagnostics can
-        // prove which subscriptions actually landed and which failed.
         System.println("BLE: CCCD write status=" + status + " uuid=" + uuid);
 
-        // Verify this is actually a CCCD descriptor write. If a non-CCCD
-        // descriptor write lands here (firmware quirk or future profile
-        // change), advancing the subscribe queue would silently skip a
-        // subscription. Wrapped in try/catch because getUuid() touches
-        // native memory — same crash vector as characteristic.getUuid()
-        // if the link dropped between the write and callback.
+        // Verify the descriptor, but tolerate freed native backing after loss.
         try {
             if (!BLE.cccdUuid().equals(descriptor.getUuid())) {
                 System.println(
@@ -1688,30 +1576,18 @@ class OhMyWristBleDelegate extends BLE.BleDelegate {
                 return;
             }
         } catch (e) {
-            // descriptor.getUuid() threw — native backing likely freed.
-            // Fall through and process normally: we're inside the subscribe
-            // flow, and _currentSubscribingUuid was set, so this is almost
-            // certainly a CCCD write. Logging the anomaly is enough.
             System.println(
                 "BLE: descriptor.getUuid() threw in onDescriptorWrite (link dropping?)"
             );
         }
 
-        // DEFENSIVE: If device disconnected while a CCCD write was in-flight,
-        // _service and _connectedDevice will be null (from _onDisconnected)
-        // or the service object is invalidated. Do NOT retry or advance — just
-        // bail. The disconnect handler will reset state.
+        // Never advance a subscription after the disconnect cleared its state.
         if (_service == null || _connectedDevice == null) {
             System.println("BLE: onDescriptorWrite after disconnect, ignoring");
             return;
         }
 
-        // If the write failed AND we haven't already retried THIS UUID, push
-        // it back to the front of the queue for one more attempt. This
-        // recovers the common case where the very first CCCD write loses an
-        // arbitration race with discovery completion. We key the retry set
-        // by uuid.toString() because BLE.Uuid objects are not reliable
-        // Dictionary keys across all Connect IQ devices.
+        // Retry once by string key: BLE.Uuid keys vary across CIQ devices.
         if (status != BLE.STATUS_SUCCESS && uuid != null) {
             var uuidKey = uuid.toString();
             if (!_retriedCccds.hasKey(uuidKey)) {
