@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="3">
-    <iq:application id="85566b11c3c9e615f33df10d37a69377" type="watch-app" name="@Strings.AppName" entry="OhMyWristApp" launcherIcon="@Drawables.LauncherIcon" minApiLevel="3.1.0" version="1.0.0">
+    <iq:application id="b00505e81cf242fd815ebcfa204adfba" type="watch-app" name="@Strings.AppName" entry="OhMyWristApp" launcherIcon="@Drawables.LauncherIcon" minApiLevel="3.1.0" version="1.0.0">
         <iq:products>
             <iq:product id="approachs50"/>
             <iq:product id="approachs7042mm"/>

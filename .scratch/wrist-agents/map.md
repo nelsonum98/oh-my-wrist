@@ -28,12 +28,12 @@ A locked spec plus a proven data path, handed to a Codex executor to build: this
 - [Codex job-finished events: where they come from](issues/05-codex-job-finished-source.md) - `~/.codex/hooks.json` Stop and SubagentStop run `oh-my-wrist codex-hook`; notify key untouched; no job name or outcome yet.
 - [Watch screens: weekly usage for two providers, and the alert card](issues/07-watch-screens-prototype.md) - usage screen rebuilt as two weekly bars over a new payload; no alert card, outcomes are haptic plus history row.
 - [Usage acquisition: session-independent polling vs statusLine relay](issues/08-usage-acquisition-strategy.md) - daemon polls every 5 min; Claude shares the statusline cache; Codex via app-server; failed reads keep the last value for 30 min (fixed 2026-09-07).
+- [Sideload the fork build onto the watch](issues/12-sideload-fork-build.md) - fork has its own app id; build with `tools/build_garmin.sh release`, push with `tools/sideload_mtp.py` (libmtp with explicit storage and folder ids); store copy to be removed by hand in the phone app.
 
 ## Not yet specified
 
 - **herdr as a unified event source.** Not used by the build; still a candidate if per-harness hooks prove too noisy (ticket 06).
 - **Daemon lifecycle.** Now `com.nelson.oh-my-wrist` LaunchAgent, editable install from this repo. Open: whether to move the plist under the automations repo's config.
-- **Sideload loop.** Build works headless (`monkeyc` needs Java; `mise use -g java@temurin-17` done 2026-09-07). Copying the `.prg` to the watch still needs USB plus OpenMTP; the store build must be removed first because both share the app id.
 - **Out-of-range behaviour.** What the watch shows when the Mac is out of BLE range (stale marker, last-updated time) and whether alerts queue.
 - **OpenCode surface.** Whether to keep, ignore, or remove OpenCode support in the fork.
 
