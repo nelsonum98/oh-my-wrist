@@ -8,7 +8,7 @@ Blocked by: none
 
 How does upstream oh-my-wrist work end to end, and what exactly must change to add a Codex provider, weekly-only usage for two providers, session-independent usage fetch, and job-level finished alerts?
 
-Read the fork at `~/dev/oh-my-wrist` and produce an architecture note covering:
+Read the fork at `~/dev/personal/oh-my-wrist` and produce an architecture note covering:
 
 1. Event model: `src/ohm/provider_types.py` (`CanonicalEvent`), `src/ohm/protocol.py` (IPC wire format, BLE GATT UUIDs, characteristics), `src/ohm/ble_daemon.py` (what is sent over BLE, how often, size limits), `src/ohm/history_encoder.py`.
 2. Providers: `src/ohm/adapters/claude_adapter.py`, `hook_relay.py`, and `opencode/plugins/oh_my_wrist_opencode.ts`. What a new provider needs to implement. Whether the watch app has provider-specific code (`garmin/source/StatsModel.mc`, `IconCatalog.mc`, `Palette.mc`).

@@ -1,6 +1,6 @@
 # Upstream internals: how oh-my-wrist moves events and usage to the watch
 
-Research note for `.scratch/wrist-agents/issues/01-upstream-internals.md`. Read directly against the fork's source at `~/dev/oh-my-wrist` (branch `research/upstream-internals`, worktree `.claude/worktrees/research-upstream-internals`, HEAD `4ace3ef`). Garmin Connect IQ facts are cited to `developer.garmin.com` / `forums.garmin.com` where the source code alone doesn't settle the question. No source file was modified to produce this note.
+Research note for `.scratch/wrist-agents/issues/01-upstream-internals.md`. Read directly against the fork's source at `~/dev/personal/oh-my-wrist` (branch `research/upstream-internals`, worktree `.claude/worktrees/research-upstream-internals`, HEAD `4ace3ef`). Garmin Connect IQ facts are cited to `developer.garmin.com` / `forums.garmin.com` where the source code alone doesn't settle the question. No source file was modified to produce this note.
 
 ## 1. Event model
 

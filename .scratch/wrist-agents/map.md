@@ -1,7 +1,7 @@
 # Map: wrist-agents
 
 Label: wayfinder:map
-Repo: ~/dev/oh-my-wrist (fork of yazon/oh-my-wrist, upstream remote `upstream`)
+Repo: ~/dev/personal/oh-my-wrist (fork of yazon/oh-my-wrist, upstream remote `upstream`)
 
 ## Destination
 
@@ -42,6 +42,6 @@ A locked spec plus a proven data path, handed to a Codex executor to build: this
 - 5-hour rate-limit windows. Weekly only, per Nelson 2026-09-03.
 - Any phone or cloud relay, tunnel endpoint, or Connect IQ HTTP polling route. BLE direct only.
 - Token or dollar spend; only window utilization.
-- Showing agent usage on the custom watch face (separate effort at `~/dev/epix-face`).
+- Showing agent usage on the custom watch face (separate effort at `~/dev/personal/epix-face`).
 - Publishing the fork to the Connect IQ store; sideload or private build only.
 - Android.
